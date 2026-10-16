@@ -39,6 +39,7 @@ export function allowedTexts(C) {
     add(r.title);
     for (const n of [2, 3, 4, 5]) add(r.rules.replace('{n}', String(n)));
   }
+  for (const w of Object.values(C.WRONG_ANSWER)) add(w.rule);
   for (const t of C.TWISTS) {
     add(t.title);
     const texts = [t.text];

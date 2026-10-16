@@ -8,10 +8,11 @@ import { play } from '../shared/sounds.js';
 import { prefetch, stopVoice, voiceEnabled } from '../shared/voice.js';
 import { BAD, GOOD, LINES, pickOne } from '../shared/voicelines.js';
 import { markSeen, orderFresh, pickDefi, pickFresh } from './memory.js';
-import { toast } from './render.js';
-import { S, activeTeams, addScore, freshState, lastTeams, len, menuQs, mult, newQid, ranking, roundRules, roundType, rt, setState, shuffle, teamById } from './state.js';
+import { S, activeTeams, addScore, freshState, lastTeams, len, menuQs, mult, newQid, ranking, roundType, rt, setState, shuffle, teamById, wrongCosts, wrongPasses, wrongRule } from './state.js';
 import { clearSecrets, connect, giveSecret, hostSend, sync } from './transport.js';
 import { answerParts, applyVoiceConfig, questionText, say, twistParts } from './voice.js';
+
+// ---------- début de partie, manches, podium ----------
 
 export function startGame() {
   for (const t of S.teams) t.score = 0;
@@ -36,7 +37,7 @@ export function introRound() {
   clearSecrets();
   const type = roundType();
   play(type === 'burger' ? 'burger' : 'round');
-  say([C.ROUNDS[type].title, roundRules(type)]);
+  say([C.ROUNDS[type].title, C.ROUNDS[type].rules.replace('{n}', String(menuQs())), wrongRule(type)]);
 }
 
 export function startRound() {
@@ -69,7 +70,7 @@ export function startRound() {
     case 'defis': {
       const perf = pickPerformers();
       S.R = { type, order: perf, ti: 0, defis: pickFresh('defis', C.DEFIS.map((d) => d.id), perf.length) };
-      return startPerformer();
+      return startDefi();
     }
   }
   startItem();
@@ -89,7 +90,11 @@ export function endRound() {
   sync();
 }
 
-export function maybeTwist(type) {
+// ---------- règles bizarres ----------
+// Tirée avant une question (probabilité settings.twistRate), valable pour cette
+// seule question. Liste et manches concernées : C.TWISTS (shared/content.js).
+
+function maybeTwist(type) {
   if (Math.random() >= S.settings.twistRate) return null;
   const last = lastTeams();
   const pool = C.TWISTS.filter(
@@ -103,7 +108,6 @@ export function maybeTwist(type) {
   let tw = pool[pool.length - 1];
   for (let i = 0; i < pool.length; i++) if ((r -= weights[i]) < 0) { tw = pool[i]; break; }
   if (!tw) return null;
-  const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
   const names = last.map((t) => t.name).join(' et ');
   const tw2 = { id: tw.id, title: tw.title, text: tw.text.replace('{accent}', pickOne(C.ACCENTS)).replace('{who}', pickOne(C.SPOKESPERSON)).replace('{last}', names) };
   if (tw.catchup) tw2.boost = last.map((t) => t.id);
@@ -111,7 +115,7 @@ export function maybeTwist(type) {
 }
 
 // « Vol de points » : 1 point pris à l'équipe en tête (si ce n'est pas l'équipe qui a répondu)
-export function applySteal(teamId) {
+function applySteal(teamId) {
   if (S.R?.twist?.id !== 'vol') return;
   const top = Math.max(...activeTeams().map((t) => t.score));
   const leaders = activeTeams().filter((t) => t.score === top);
@@ -121,7 +125,7 @@ export function applySteal(teamId) {
   S.R.stealInfo = `${teamById(teamId).name} vole 1 point à ${leaders[0].name} !`;
 }
 
-export function applySwap() {
+function applySwap() {
   const R = S.R;
   if (R.twist?.id !== 'echange' || R.swapInfo) return;
   const [a, b] = shuffle(activeTeams());
@@ -141,11 +145,20 @@ export function laugh(teamId) {
   sync();
 }
 
+// ---------- questions : Nuggets, L'Addition, Burger de la mort, Sel ou Poivre ----------
+// Étapes (R.step) :
+//   twist   → annonce d'une règle bizarre (bouton « Compris ! »)
+//   read    → la question s'affiche ; R.readUntil = ouverture automatique
+//   open    → buzzers ouverts (Sel ou Poivre : « choose », choix secret sur les téléphones)
+//   answer  → une équipe a buzzé, on attend « Juste » / « Fausse » (chrono R.deadline)
+//   suspense→ roulement de tambour (Sel ou Poivre, si le réglage est activé)
+//   reveal  → réponse affichée, bouton « Question suivante »
+
 export function readDelayMs(text) {
   return Math.max(1500, Math.min(6000, text.length * 55));
 }
 
-export function startItem() {
+function startItem() {
   const R = S.R;
   R.item = R.items[R.qi];
   R.winner = null;
@@ -197,22 +210,24 @@ export function endRead() {
 export function onBuzz(teamId, qid) {
   const R = S.R;
   if (!R || qid !== R.qid || R.step !== 'open') return;
-  rt.buzzOpenKey = null; // le rt.hub a déjà fermé le buzzer
+  rt.buzzOpenKey = null; // le hub a déjà fermé le buzzer
   stopVoice();
   R.winner = teamId;
   R.step = 'answer';
+  R.timeUp = false;
   R.deadline = answerDeadline();
   play(teamById(teamId).animal);
   sync();
 }
 
-export const answerDeadline = () => (S.settings.answerTimer ? Date.now() + S.settings.answerTimer * 1000 : 0);
+const answerDeadline = () => (S.settings.answerTimer ? Date.now() + S.settings.answerTimer * 1000 : 0);
 
 export function judgeBuzz(ok) {
   const R = S.R;
   const base = R.type === 'nuggets' ? 1 : 2;
   R.lastOk = ok;
   R.deadline = 0;
+  R.timeUp = false;
   if (ok) {
     R.lastGain = addScore(R.winner, base * mult());
     applySteal(R.winner);
@@ -221,15 +236,18 @@ export function judgeBuzz(ok) {
     return;
   }
   play('bad');
-  if (R.type === 'burger') {
-    addScore(R.winner, -1 * mult());
+  // Burger de la mort : toujours −1 et la main passe ; Nuggets / Addition : selon le réglage
+  const burger = R.type === 'burger';
+  if (burger || wrongCosts()) addScore(R.winner, -1 * mult());
+  if (burger || wrongPasses()) {
     R.excluded.push(R.winner);
     const left = activeTeams().filter((t) => !R.excluded.includes(t.id));
     if (left.length) {
-      // les autres équipes peuvent tenter leur chance
+      // les autres équipes peuvent tenter leur chance (un essai chacune)
       R.winner = null;
       R.qid = newQid();
       R.step = 'open';
+      R.timeUp = false;
       say([pickOne(BAD), LINES.othersTurn]);
       sync();
       return;
@@ -239,7 +257,7 @@ export function judgeBuzz(ok) {
 }
 
 // roulement de tambour avant une révélation (réglage « Suspense »)
-export function startSuspense(next) {
+function startSuspense(next) {
   const R = S.R;
   if (!S.settings.suspense) return runSuspenseNext(next);
   R.deadline = 0;
@@ -251,7 +269,7 @@ export function startSuspense(next) {
   sync();
 }
 
-export function runSuspenseNext(next) {
+function runSuspenseNext(next) {
   if (next.act === 'reveal') reveal();
   else closeVote(next.forced);
 }
@@ -276,8 +294,7 @@ export function reveal() {
     play('reveal');
   }
   applySwap();
-  const react = R.timedOut ? [LINES.timeout] : R.lastOk === true ? [pickOne(GOOD)] : R.lastOk === false ? [pickOne(BAD)] : [];
-  R.timedOut = false;
+  const react = R.lastOk === true ? [pickOne(GOOD)] : R.lastOk === false ? [pickOne(BAD)] : [];
   say([...(R.type === 'selpoivre' ? [] : react), ...answerParts(R)]);
   const next = R.items?.[R.qi + 1];
   if (next) prefetch([questionText(next, R.type)]);
@@ -313,7 +330,11 @@ export function onAction(teamId, qid, value) {
   }
 }
 
-export function startMenuTeam() {
+// ---------- Menus ----------
+// Étapes : pick (l'équipe choisit un thème) → [twist] → judge (réponse orale,
+// Juste/Fausse) → reveal → … → summary (bilan et bonus) → équipe suivante.
+
+function startMenuTeam() {
   const R = S.R;
   // thèmes jamais joués d'abord (même lors des soirées précédentes), puis les autres
   const order = orderFresh('menus', C.MENUS);
@@ -326,7 +347,7 @@ export function startMenuTeam() {
   sync();
 }
 
-export function chooseMenu(i) {
+function chooseMenu(i) {
   const R = S.R;
   R.theme = i;
   R.usedThemes.push(i);
@@ -337,7 +358,7 @@ export function chooseMenu(i) {
   startMenuQuestion();
 }
 
-export function startMenuQuestion() {
+function startMenuQuestion() {
   const R = S.R;
   R.item = C.MENUS[R.theme].qs[R.qi];
   R.laughed = [];
@@ -374,6 +395,7 @@ export function judgeMenu(ok) {
   const R = S.R;
   R.lastOk = ok;
   R.deadline = 0;
+  R.timeUp = false;
   if (ok) {
     R.correct++;
     R.lastGain = addScore(R.order[R.ti], 1 * mult());
@@ -382,8 +404,7 @@ export function judgeMenu(ok) {
   } else play('bad');
   R.step = 'reveal';
   applySwap();
-  say([R.timedOut ? LINES.timeout : pickOne(ok ? GOOD : BAD), R.item.a]);
-  R.timedOut = false;
+  say([pickOne(ok ? GOOD : BAD), R.item.a]);
   sync();
 }
 
@@ -408,13 +429,18 @@ export function nextMenuTeam() {
 }
 
 // toutes les équipes votent, sauf celle qui joue (même celles qui ne passent pas cette manche)
+// ---------- Fausses pubs et Défis ----------
+// Pubs : brief (produits envoyés en secret) → prep (concertation commune) →
+//        pour chaque équipe : ready → show (45 s) → vote → [suspense] → result.
+// Défis : pour chaque équipe : draw → run (chrono) → vote → [suspense] → result.
+
 export function voters() {
   return activeTeams().map((t) => t.id).filter((id) => id !== S.R.order[S.R.ti]);
 }
 
 // Durée : en Rapide et Court, seules quelques équipes passent aux pubs et aux défis.
 // On fait passer en priorité celles qui n'ont encore rien joué devant les autres.
-export function pickPerformers() {
+function pickPerformers() {
   const k = Math.min(len().performers, activeTeams().length);
   const ids = shuffle(activeTeams().map((t) => t.id));
   const done = S.performed || [];
@@ -424,7 +450,8 @@ export function pickPerformers() {
   return activeTeams().map((t) => t.id).filter((id) => chosen.includes(id));
 }
 
-export function startPerformer() {
+// Défis : une équipe à la fois
+function startDefi() {
   const R = S.R;
   const team = R.order[R.ti];
   R.step = 'draw';
@@ -435,30 +462,25 @@ export function startPerformer() {
   R.bonus = false;
   R.qid = newQid();
   clearSecrets();
-  if (R.type === 'pubs') {
-    R.product = R.products[R.ti] || C.PRODUCTS[Math.floor(Math.random() * C.PRODUCTS.length)];
-    say([teamById(team).name, LINES.yourProduct, R.product]);
-  } else {
-    // plus d'équipes que de défis : on reprend un défi au hasard, avec un contenu différent
-    const d = C.DEFIS.find((x) => x.id === R.defis[R.ti]) || C.DEFIS[Math.floor(Math.random() * C.DEFIS.length)];
-    const made = d.make(pickDefi);
-    R.defi = { id: d.id, secret: d.secret };
-    R.defiTitle = d.title;
-    R.defiRules = d.rules;
-    R.defiVote = d.vote;
-    R.defiSeconds = d.seconds;
-    R.show = made.show || null;
-    R.revealText = made.reveal || null;
-    if (made.secret) giveSecret(team, d.secret, made.secret);
-    say([teamById(team).name, LINES.defi, d.title, d.rules]);
-  }
+  // plus d'équipes que de défis : on reprend un défi au hasard, avec un contenu différent
+  const d = C.DEFIS.find((x) => x.id === R.defis[R.ti]) || C.DEFIS[Math.floor(Math.random() * C.DEFIS.length)];
+  const made = d.make(pickDefi);
+  R.defi = { id: d.id, secret: d.secret };
+  R.defiTitle = d.title;
+  R.defiRules = d.rules;
+  R.defiVote = d.vote;
+  R.defiSeconds = d.seconds;
+  R.show = made.show || null;
+  R.revealText = made.reveal || null;
+  if (made.secret) giveSecret(team, d.secret, made.secret);
+  say([teamById(team).name, LINES.defi, d.title, d.rules]);
   play('round');
   sync();
 }
 
 // Fausses pubs : chaque équipe reçoit son produit en secret, tout le monde se
 // concerte en même temps, puis les équipes jouent leur pub à tour de rôle.
-export function startPubs() {
+function startPubs() {
   const R = S.R;
   R.step = 'brief';
   R.deadline = 0;
@@ -492,7 +514,7 @@ export function startTimer(step, seconds) {
   sync();
 }
 
-export function onTimeout() {
+function onTimeout() {
   const R = S.R;
   R.deadline = 0;
   play('timeup');
@@ -501,16 +523,13 @@ export function onTimeout() {
     revealWithSuspense();
     return;
   }
-  // chrono de réponse écoulé : la réponse compte comme fausse
-  if (['nuggets', 'addition', 'burger'].includes(R.type) && R.step === 'answer') {
-    toast('⏱ Temps écoulé !');
-    R.timedOut = true;
-    return judgeBuzz(false);
-  }
-  if (R.type === 'menus' && R.step === 'judge') {
-    toast('⏱ Temps écoulé !');
-    R.timedOut = true;
-    return judgeMenu(false);
+  // chrono de réponse écoulé : rien d'automatique, l'animateur (ou la personne
+  // devant l'écran) décide si la réponse donnée est juste ou fausse
+  if ((['nuggets', 'addition', 'burger'].includes(R.type) && R.step === 'answer') || (R.type === 'menus' && R.step === 'judge')) {
+    R.timeUp = true;
+    say([LINES.timeout]);
+    sync();
+    return;
   }
   if (R.type === 'pubs' && R.step === 'prep') return startPub();
   else if ((R.type === 'pubs' && R.step === 'show') || (R.type === 'defis' && R.step === 'run')) return openVote();
@@ -526,7 +545,7 @@ export function openVote() {
   sync();
 }
 
-export function closeVote(forced) {
+function closeVote(forced) {
   const R = S.R;
   const team = R.order[R.ti];
   const v = voters();
@@ -563,8 +582,10 @@ export function nextPerformer() {
   R.ti++;
   if (R.ti >= R.order.length) endRound();
   else if (R.type === 'pubs') startPub();
-  else startPerformer();
+  else startDefi();
 }
+
+// ---------- pause ----------
 
 export function togglePause() {
   if (S.phase === 'setup') return;
@@ -586,7 +607,10 @@ export function togglePause() {
   sync();
 }
 
-export let lastTick = 0;
+// ---------- horloge ----------
+// Toutes les 200 ms : fin de lecture, fin du suspense, chronos (tic-tac et fin).
+
+let lastTick = 0;
 
 setInterval(() => {
   const R = S.R;
@@ -607,6 +631,8 @@ setInterval(() => {
 }, 200);
 
 // chaque équipe active garde un cri différent
+// ---------- réglages et nouvelle partie ----------
+
 export function fixAnimals() {
   const used = new Set();
   for (const t of activeTeams()) {

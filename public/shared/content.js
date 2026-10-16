@@ -48,20 +48,17 @@ export const ROUNDS = {
   nuggets: {
     title: 'Nuggets',
     subtitle: 'Questions éclair',
-    rules: 'Buzzez le premier et répondez à voix haute. Bonne réponse : +1 point. Une erreur et la réponse est donnée, personne d’autre ne tente.',
-    count: 12,
+    rules: 'Buzzez le premier et répondez à voix haute. Bonne réponse : +1 point.',
   },
   selpoivre: {
     title: 'Sel ou Poivre',
     subtitle: 'Vrai ou faux',
     rules: 'Sel = vrai, Poivre = faux. Choisissez en secret sur votre téléphone. +1 point par bonne réponse.',
-    count: 8,
   },
   addition: {
     title: 'L’Addition',
     subtitle: 'Trouvez le point commun',
     rules: 'Quel est le lien entre ces mots ? Buzzez le premier. Bonne réponse : +2 points.',
-    count: 5,
   },
   menus: {
     title: 'Les Menus',
@@ -82,7 +79,6 @@ export const ROUNDS = {
     title: 'Burger de la mort',
     subtitle: 'La finale piégée',
     rules: 'Questions pièges ! Bonne réponse : +2. Mauvaise réponse : −1, et l’équipe ne peut plus buzzer sur cette question.',
-    count: 5,
   },
 };
 
@@ -92,6 +88,15 @@ export const LENGTHS = {
   rapide: { label: 'Rapide', hint: 'peu de questions', nuggets: 5, selpoivre: 4, addition: 3, burger: 3, menuQs: 2, performers: 2 },
   court: { label: 'Court', hint: 'version allégée', nuggets: 8, selpoivre: 6, addition: 4, burger: 4, menuQs: 3, performers: 4 },
   long: { label: 'Long', hint: 'la soirée complète', nuggets: 12, selpoivre: 8, addition: 5, burger: 5, menuQs: 3, performers: 99 },
+};
+
+// Mauvaise réponse en Nuggets et L'Addition (réglage au lancement), pour éviter
+// les buzz au hasard. Le Burger de la mort a toujours « rebond + −1 ».
+export const WRONG_ANSWER = {
+  rebond: { label: 'La main passe aux autres équipes', rule: 'Mauvaise réponse : la main passe aux autres équipes, un essai chacune.' },
+  malus: { label: 'L’équipe perd 1 point', rule: 'Mauvaise réponse : −1 point, et la réponse est donnée.' },
+  both: { label: 'Les deux : −1 point et la main passe', rule: 'Mauvaise réponse : −1 point, et la main passe aux autres équipes.' },
+  none: { label: 'Rien : la réponse est donnée', rule: 'Mauvaise réponse : la réponse est donnée, personne d’autre ne tente.' },
 };
 
 export const ROUND_ORDER = ['nuggets', 'selpoivre', 'addition', 'menus', 'pubs', 'defis', 'burger'];

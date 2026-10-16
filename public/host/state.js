@@ -32,7 +32,7 @@ export const store = {
 // ---------- l'état de la partie ----------
 
 /** Réglages choisis au lancement (écran de création). */
-export function defaultSettings() {
+function defaultSettings() {
   return {
     nTeams: 3, // 2 à 12
     length: 'long', // durée : clé de C.LENGTHS (rapide | court | long)
@@ -40,7 +40,8 @@ export function defaultSettings() {
     twistRate: 0.2, // probabilité d'une règle bizarre avant chaque question
     selTimer: true, // chrono de 15 s pour Sel ou Poivre
     buzzDuringRead: false, // buzzer ouvert dès l'affichage de la question
-    answerTimer: 10, // secondes pour répondre après un buzz (0 = sans chrono)
+    answerTimer: 10, // secondes pour répondre après un buzz (0 = sans chrono) ; à la fin, l'animateur tranche
+    wrongAnswer: 'rebond', // Nuggets et Addition : clé de C.WRONG_ANSWER (rebond | malus | both | none)
     suspense: true, // roulement de tambour, annonce du leader, classement avant la finale
     catchup: true, // règle bizarre « Coup de pouce » pour les équipes dernières
     presenter: false, // télécommande du présentateur autorisée
@@ -128,7 +129,12 @@ export const roundType = () => S.settings.rounds[S.ri];
 export const newQid = () => `${S.ri}.${++S.seq}`;
 export const len = () => C.LENGTHS[S.settings.length] || C.LENGTHS.long; // réglages de la durée choisie
 export const menuQs = () => S.R?.nq || len().menuQs; // questions par menu
-export const roundRules = (type) => C.ROUNDS[type].rules.replace('{n}', String(menuQs()));
+export const roundRules = (type) => [C.ROUNDS[type].rules.replace('{n}', String(menuQs())), wrongRule(type)].filter(Boolean).join(' ');
+// phrase sur les mauvaises réponses, pour Nuggets et L'Addition
+export const wrongRule = (type) => (type === 'nuggets' || type === 'addition' ? (C.WRONG_ANSWER[S.settings.wrongAnswer] || C.WRONG_ANSWER.rebond).rule : '');
+// mauvaise réponse en Nuggets / Addition : la main passe ? l'équipe perd un point ?
+export const wrongPasses = () => ['rebond', 'both'].includes(S.settings.wrongAnswer);
+export const wrongCosts = () => ['malus', 'both'].includes(S.settings.wrongAnswer);
 
 export function shuffle(a) {
   a = [...a];

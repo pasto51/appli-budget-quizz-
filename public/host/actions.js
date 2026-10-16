@@ -11,7 +11,7 @@ import { $, S, SAVE_KEY, activeTeams, addScore, freshState, rt, saved, setState,
 import { connect, hostSend, sync } from './transport.js';
 import { applyVoiceConfig, say } from './voice.js';
 
-export let audioOn = false;
+let audioOn = false;
 
 export function ensureAudio() {
   if (!audioOn) {
@@ -202,6 +202,7 @@ document.addEventListener('change', (e) => {
   if (el.dataset.set === 'selTimer') S.settings.selTimer = el.checked;
   if (el.dataset.set === 'buzzDuringRead') S.settings.buzzDuringRead = el.checked;
   if (el.dataset.set === 'answerTimer') S.settings.answerTimer = Number(el.value);
+  if (el.dataset.set === 'wrongAnswer') S.settings.wrongAnswer = el.value;
   if (el.dataset.set === 'suspense') S.settings.suspense = el.checked;
   if (el.dataset.set === 'catchup') S.settings.catchup = el.checked;
   if (el.dataset.set === 'presenter') S.settings.presenter = el.checked;

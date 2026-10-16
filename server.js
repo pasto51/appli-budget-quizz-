@@ -43,7 +43,7 @@ const EL_DEFAULT_VOICE = process.env.ELEVENLABS_VOICE_ID || '';
 const EL_MODELS = { eco: process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5', qualite: process.env.ELEVENLABS_MODEL_QUALITY || 'eleven_multilingual_v2' };
 const DAILY_CHARS = Number(process.env.VOICE_DAILY_CHARS) || 60000; // garde-fou sur les crédits
 const ALLOWED = allowedTexts(C);
-const TTS_DIR = path.join(os.tmpdir(), 'bq-tts');
+const TTS_DIR = process.env.TTS_CACHE_DIR || path.join(os.tmpdir(), 'bq-tts'); // voix déjà générées
 fs.mkdirSync(TTS_DIR, { recursive: true });
 const ttsMemory = new Map(); // clé -> Buffer (les plus récents)
 const ttsPending = new Map(); // clé -> Promise<Buffer>

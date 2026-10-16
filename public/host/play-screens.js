@@ -4,25 +4,31 @@ import * as C from '../shared/content.js';
 import { esc } from '../shared/controls.js';
 import { readDelayMs, voters } from './game.js';
 import { btn, stage } from './render.js';
-import { S, activeTeams, animalOf, effective, menuQs, mult, teamById } from './state.js';
+import { S, activeTeams, animalOf, effective, menuQs, mult, teamById, wrongCosts } from './state.js';
 
-export function twistCard(R) {
+// chrono de réponse, ou « temps écoulé » : l'animateur tranche avec Juste / Fausse
+function timeUpOrTimer(R) {
+  if (R.timeUp) return '<div class="time-up">⏱ Temps écoulé !<small>Leur réponse était-elle juste ?</small></div>';
+  return R.deadline ? `<div class="big-timer" data-deadline="${R.deadline}"></div>` : '';
+}
+
+function twistCard(R) {
   return `<div class="twist-card"><div class="twist-kicker">🌀 Règle bizarre</div><div class="twist-title">${esc(R.twist.title)}</div><div class="twist-text">${esc(R.twist.text)}</div></div>`;
 }
 
-export function twistBanner(R) {
+function twistBanner(R) {
   if (!R.twist || R.step === 'twist') return '';
   return `<div class="twist-banner">🌀 <b>${esc(R.twist.title)}</b> ${esc(R.twist.text)}</div>`;
 }
 
-export function laughButtons(R) {
+function laughButtons(R) {
   if (R.twist?.id !== 'rire' || R.step === 'twist') return '';
   return activeTeams()
     .map((t) => btn('laugh', `😂 ${esc(t.name)} a ri (−1)`, 'btn-small', `data-team="${t.id}" ${R.laughed.includes(t.id) ? 'disabled' : ''}`))
     .join(' ');
 }
 
-export function extraInfo(R) {
+function extraInfo(R) {
   return [R.stealInfo, R.swapInfo].filter(Boolean).map((s) => `<div class="info-pop">${esc(s)}</div>`).join('');
 }
 
@@ -52,14 +58,15 @@ export function renderPlay() {
   }
 }
 
-export function questionBody(R) {
+function questionBody(R) {
   if (R.type === 'addition') return `<div class="addition">${R.item.words.map((w) => `<span class="word">${esc(w)}</span>`).join('<span class="plus">+</span>')}<span class="plus">=</span><span class="word word-q">?</span></div>`;
   return `<div class="question">${esc(R.item.q)}</div>`;
 }
 
-export function renderBuzzRound(R) {
+function renderBuzzRound(R) {
   const pts = (R.type === 'nuggets' ? 1 : 2) * mult();
-  const ptsLabel = (R.type === 'burger' ? `+${pts} / −${mult()}` : `+${pts}`) + (R.twist?.boost ? ' · double pour les derniers' : '');
+  const malus = R.type === 'burger' || wrongCosts();
+  const ptsLabel = (malus ? `+${pts} / −${mult()}` : `+${pts}`) + (R.twist?.boost ? ' · double pour les derniers' : '');
   let status = '';
   let controls = '';
   if (R.step === 'read') {
@@ -72,7 +79,7 @@ export function renderBuzzRound(R) {
     controls = (R.twist?.id === 'dernier' ? btn('close-buzz', 'Clore les buzz', 'btn-ghost') + ' ' : '') + btn('nobody', 'Personne ne sait', 'btn-ghost');
   } else if (R.step === 'answer') {
     const t = teamById(R.winner);
-    status = `<div class="buzzed" style="--team:${t.color};--ink:${t.ink}"><span class="buzzed-emoji">${animalOf(t).emoji}</span>${esc(t.name)}</div>${R.deadline ? `<div class="big-timer" data-deadline="${R.deadline}"></div>` : ''}`;
+    status = `<div class="buzzed" style="--team:${t.color};--ink:${t.ink}"><span class="buzzed-emoji">${animalOf(t).emoji}</span>${esc(t.name)}</div>${timeUpOrTimer(R)}`;
     controls = `<span class="ctl-label">Leur réponse est…</span> ${btn('right', '✔ Juste', 'btn-good btn-big')} ${btn('wrong', '✘ Fausse', 'btn-bad btn-big')}`;
   } else if (R.step === 'reveal') {
     const who = R.lastOk && R.winner ? `<div class="verdict good">${esc(teamById(R.winner).name)} marque +${R.lastGain} !</div>` : R.lastOk === false ? '<div class="verdict bad">Raté !</div>' : '';
@@ -82,7 +89,7 @@ export function renderBuzzRound(R) {
   stage(`${twistBanner(R)}<div class="q-points">${ptsLabel}</div>${questionBody(R)}${status}`, `${controls}<div class="laughs">${laughButtons(R)}</div>`);
 }
 
-export function renderSelPoivre(R) {
+function renderSelPoivre(R) {
   let status = '';
   let controls = '';
   const teams = activeTeams();
@@ -106,7 +113,7 @@ export function renderSelPoivre(R) {
   stage(`${twistBanner(R)}<div class="question">${esc(R.item.q)}</div>${status}`, `${controls}<div class="laughs">${laughButtons(R)}</div>`);
 }
 
-export function renderMenus(R) {
+function renderMenus(R) {
   const t = teamById(R.order[R.ti]);
   const head = `<div class="perf-team" style="--team:${t.color};--ink:${t.ink}">${animalOf(t).emoji} ${esc(t.name)}</div>`;
   if (R.step === 'pick') {
@@ -128,7 +135,7 @@ export function renderMenus(R) {
   let controls = '';
   if (R.step === 'judge') {
     controls = `<span class="ctl-label">Leur réponse est…</span> ${btn('menu-right', '✔ Juste', 'btn-good btn-big')} ${btn('menu-wrong', '✘ Fausse', 'btn-bad btn-big')}`;
-    if (R.deadline) status = `<div class="big-timer" data-deadline="${R.deadline}"></div>`;
+    status = timeUpOrTimer(R);
   }
   else {
     status = `<div class="answer"><small>Réponse</small>${esc(R.item.a)}</div><div class="verdict ${R.lastOk ? 'good' : 'bad'}">${R.lastOk ? `+${R.lastGain} !` : 'Raté !'}</div>${extraInfo(R)}`;
@@ -137,7 +144,7 @@ export function renderMenus(R) {
   stage(`${twistBanner(R)}${head}<div class="menu-theme">Menu « ${esc(theme)} » <span class="dots">${dots}</span></div>${questionBody(R)}${status}`, `${controls}<div class="laughs">${laughButtons(R)}</div>`);
 }
 
-export function renderPubsPrep(R) {
+function renderPubsPrep(R) {
   const chips = R.order.map((id) => { const o = teamById(id); return `<span class="lock done" style="--team:${o.color};--ink:${o.ink}">${animalOf(o).emoji} ${esc(o.name)} 🤫</span>`; }).join('');
   const where = S.mode === 'local' ? 'dans son panneau, en bas de l’écran (ouvrez-le chacun votre tour)' : 'sur son téléphone';
   if (R.step === 'brief') {
@@ -152,7 +159,7 @@ export function renderPubsPrep(R) {
   );
 }
 
-export function renderPerform(R) {
+function renderPerform(R) {
   if (R.type === 'pubs' && (R.step === 'brief' || R.step === 'prep')) return renderPubsPrep(R);
   const t = teamById(R.order[R.ti]);
   const head = `<div class="perf-team" style="--team:${t.color};--ink:${t.ink}">${animalOf(t).emoji} ${esc(t.name)}</div>`;

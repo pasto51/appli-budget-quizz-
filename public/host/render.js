@@ -27,7 +27,7 @@ export function checkLeader() {
   if (S.settings.suspense) setTimeout(() => announce(`${animalOf(leaders[0]).emoji} ${leaders[0].name} prend la tête !`, leaders[0]), 900);
 }
 
-export let announceTimer = null;
+let announceTimer = null;
 
 export function announce(text, team) {
   const el = $('announce');
@@ -43,7 +43,7 @@ export function announce(text, team) {
   announceTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-export let toastTimer = null;
+let toastTimer = null;
 
 export function toast(text) {
   const el = $('toast');
@@ -151,9 +151,9 @@ export function renderPanels() {
 }
 
 // les animations d'entrée ne jouent que quand on change de question, pas à chaque rafraîchissement
-export let stageKey = '';
+let stageKey = '';
 
-export let enterTimer = null;
+let enterTimer = null;
 
 export function stage(html, controls = '') {
   const R = S.R;

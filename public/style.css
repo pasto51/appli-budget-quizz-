@@ -431,3 +431,6 @@ body.has-remote .controls { display: none; }
 
 .voice-opts { margin-top: 10px; }
 .voice-opts .btn { align-self: flex-start; }
+
+.time-up { font-family: var(--display); font-size: clamp(2rem, 5vw, 3.6rem); color: var(--red); display: flex; flex-direction: column; align-items: center; animation: pop-in .3s ease-out; }
+.time-up small { font-family: var(--body); font-size: 1.1rem; color: var(--muted); font-weight: 800; }

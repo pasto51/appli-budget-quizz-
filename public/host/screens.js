@@ -66,7 +66,11 @@ export function renderSetup() {
             </select></label>
           <label class="chk"><input type="checkbox" data-set="selTimer" ${st.selTimer ? 'checked' : ''}> Chrono de 15 s pour Sel ou Poivre</label>
           <label class="chk"><input type="checkbox" data-set="buzzDuringRead" ${st.buzzDuringRead ? 'checked' : ''}> Buzzer autorisé pendant la lecture</label>
-          <label>Chrono pour répondre après un buzz
+          <label>Mauvaise réponse en Nuggets et L’Addition
+            <select data-set="wrongAnswer">
+              ${Object.entries(C.WRONG_ANSWER).map(([k, w]) => `<option value="${k}" ${st.wrongAnswer === k ? 'selected' : ''}>${w.label}</option>`).join('')}
+            </select></label>
+          <label>Chrono pour répondre après un buzz (à la fin, c’est l’animateur qui tranche)
             <select data-set="answerTimer">
               ${[[0, 'Sans chrono'], [5, '5 secondes'], [10, '10 secondes'], [15, '15 secondes'], [20, '20 secondes']].map(([v, l]) => `<option value="${v}" ${st.answerTimer === v ? 'selected' : ''}>${l}</option>`).join('')}
             </select></label>
@@ -79,7 +83,7 @@ export function renderSetup() {
   );
 }
 
-export function voiceCard(st) {
+function voiceCard(st) {
   if (!voiceInfo.loaded) return '';
   if (!voiceInfo.available) return ''; // pas de clé ElevenLabs sur le serveur : rien à proposer
   const opts = voiceInfo.voices
@@ -142,7 +146,7 @@ export function renderRoundIntro() {
 }
 
 // classement dévoilé du dernier au premier avant la dernière manche (réglage « Suspense »)
-export function finalStandings() {
+function finalStandings() {
   if (!S.settings.suspense || S.ri === 0 || S.ri !== S.settings.rounds.length - 1) return '';
   const r = ranking();
   const n = r.length;

@@ -4,10 +4,9 @@
 
 import { SEEN_KEY, shuffle, store } from './state.js';
 
-// Mémoire des contenus déjà joués, d'une partie à l'autre (sur cet écran).
 // On retient le texte de chaque question, pas sa position : ajouter des
 // questions à la banque ne mélange rien.
-export const keyOf = (x) => (typeof x === 'string' ? x : x.q || (x.words && x.words.join('+')) || x.theme || x.line || x.cat || JSON.stringify(x));
+const keyOf = (x) => (typeof x === 'string' ? x : x.q || (x.words && x.words.join('+')) || x.theme || x.line || x.cat || JSON.stringify(x));
 
 // indices de la liste, ceux jamais joués d'abord (dans un ordre aléatoire)
 export function orderFresh(bank, list) {

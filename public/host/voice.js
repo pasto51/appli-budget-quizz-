@@ -7,7 +7,7 @@ import { render } from './render.js';
 import { S, teamById } from './state.js';
 import { say as voiceSay } from '../shared/voice.js';
 
-export let voiceInfo = { available: false, voices: [], loaded: false };
+export const voiceInfo = { available: false, voices: [], loaded: false };
 
 export async function loadVoiceInfo() {
   try {

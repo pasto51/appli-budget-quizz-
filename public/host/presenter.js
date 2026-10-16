@@ -5,12 +5,12 @@ import * as C from '../shared/content.js';
 import { isMuted } from '../shared/sounds.js';
 import { doAct, ensureAudio } from './actions.js';
 import { btn, toast } from './render.js';
-import { $, S, activeTeams, animalOf, menuQs, mult, ranking, roundRules, roundType, rt, teamById } from './state.js';
+import { $, S, activeTeams, animalOf, menuQs, mult, ranking, roundRules, roundType, rt, teamById, wrongCosts } from './state.js';
 
-export const REMOTE_ALWAYS = new Set(['pause', 'adj', 'm-skip', 'm-end', 'mute']);
+const REMOTE_ALWAYS = new Set(['pause', 'adj', 'm-skip', 'm-end', 'mute']);
 
 // ce que le présentateur doit savoir et que l'écran ne montre pas encore
-export function presenterSecret() {
+function presenterSecret() {
   const R = S.R;
   if (S.phase !== 'play' || !R) return null;
   if (R.type === 'selpoivre' && R.item) return { label: 'Réponse', text: R.item.sel ? '🧂 Sel (vrai)' : '🌶️ Poivre (faux)', more: R.item.why };
@@ -22,16 +22,16 @@ export function presenterSecret() {
 }
 
 // ce qu'on peut gagner sur la question en cours, comme la pastille de l'écran
-export function pointsAtStake() {
+function pointsAtStake() {
   const R = S.R;
   if (S.phase !== 'play' || !R || R.step === 'twist') return null;
   const m = mult();
   const x3 = (m > 1 ? ' (triple)' : '') + (R.twist?.boost ? ` · double pour ${R.twist.boost.map((id) => teamById(id).name).join(', ')}` : '');
   switch (R.type) {
     case 'nuggets':
-      return `+${m}${x3}`;
+      return `+${m}${wrongCosts() ? ` / −${m}` : ''}${x3}`;
     case 'addition':
-      return `+${2 * m}${x3}`;
+      return `+${2 * m}${wrongCosts() ? ` / −${m}` : ''}${x3}`;
     case 'burger':
       return `+${2 * m} / −${m}${x3}`;
     case 'selpoivre':
@@ -81,7 +81,7 @@ export function remoteState() {
     // règle bizarre en entier, comme à l'écran (grande carte pendant l'annonce, rappel ensuite)
     twist: R?.twist ? { title: R.twist.title, text: R.twist.text, announce: R.step === 'twist' } : null,
     points: pointsAtStake(),
-    extras: [R?.stealInfo, R?.swapInfo, R?.type === 'menus' && R.step === 'summary' && R.correct === menuQs() ? 'Menu complet : +1 bonus !' : null, R?.bonus ? '😂 +1 fou rire accordé' : null].filter(Boolean),
+    extras: [R?.timeUp ? '⏱ Temps écoulé : à vous de dire si c’est juste ou faux' : null, R?.stealInfo, R?.swapInfo, R?.type === 'menus' && R.step === 'summary' && R.correct === menuQs() ? 'Menu complet : +1 bonus !' : null, R?.bonus ? '😂 +1 fou rire accordé' : null].filter(Boolean),
     deadline: R?.deadline || 0,
     paused: S.paused,
     muted: isMuted(),
@@ -110,7 +110,7 @@ export function onRemoteAct(act, data) {
   doAct(act, data, true);
 }
 
-export function presenterUrl() {
+function presenterUrl() {
   return `${rt.joinOrigin || location.origin}/remote.html?code=${S.code}&key=${encodeURIComponent(S.remoteKey || '')}`;
 }
 

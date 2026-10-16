@@ -35,7 +35,7 @@ export function connect() {
   });
 }
 
-export function onHubMessage(msg) {
+function onHubMessage(msg) {
   switch (msg.t) {
     case 'room':
       S.code = msg.code;
@@ -75,8 +75,8 @@ export function onHubMessage(msg) {
   }
 }
 
-// renvoie tout au rt.hub (après une reconnexion ou un redémarrage du serveur)
-export function resync() {
+// renvoie tout au hub (après une reconnexion ou un redémarrage du serveur)
+function resync() {
   rt.lastViews = {};
   rt.buzzOpenKey = null;
   hostSend({ t: 'teams', teams: activeTeams() });
@@ -85,7 +85,7 @@ export function resync() {
   sync();
 }
 
-export async function computeJoinUrl() {
+async function computeJoinUrl() {
   let origin = location.origin;
   if (/^(localhost|127\.|\[::1\])/.test(location.hostname)) {
     try {
