@@ -7,7 +7,14 @@ Jeu de soirée façon Burger Quiz, **sans animateur humain**. De **2 à 12 équi
 - **Télécommande du présentateur** (optionnelle) : s'il y a un présentateur, il pilote le jeu depuis son propre téléphone et voit les réponses en avance.
 - **Mode tablette unique** : tout se joue sur un seul écran, sans téléphone (secours si le Wi-Fi tombe).
 
-## Lancer une partie
+## Version en ligne
+
+**https://appli-budget-quizz.onrender.com/** (hébergée sur Render, offre gratuite : après 15 minutes sans personne, la première ouverture prend environ une minute).
+
+- Écran de jeu : https://appli-budget-quizz.onrender.com/host.html
+- Les téléphones rejoignent avec le QR code affiché sur l'écran.
+
+## Lancer une partie sur son ordinateur
 
 Il faut [Node.js](https://nodejs.org) 18 ou plus récent.
 
