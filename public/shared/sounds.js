@@ -6,7 +6,7 @@
 let ctx = null;
 let master = null;
 let muted = false;
-const fileCache = new Map(); // nom -> Promise<HTMLAudioElement | null>
+const fileCache = new Map(); // nom -> Promise<ArrayBuffer | null>
 
 export function unlockAudio() {
   if (!ctx) {
@@ -36,6 +36,9 @@ export function isMuted() {
 // ---------- fichiers personnalisés ----------
 
 let available = null; // Promise<string[]> : fichiers présents dans /sounds
+const decoded = new Map(); // nom -> Promise<AudioBuffer | null>
+
+// télécharge le fichier (possible avant le premier appui sur l'écran)
 function probe(name) {
   if (!available) {
     available =
@@ -50,7 +53,7 @@ function probe(name) {
       name,
       available.then((files) => {
         const f = files.find((x) => x.replace(/\.[^.]+$/, '') === name);
-        return f ? new Audio(`/sounds/${f}`) : null;
+        return f ? fetch(`/sounds/${encodeURIComponent(f)}`).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null) : null;
       }),
     );
   }
@@ -62,16 +65,24 @@ export function preloadSounds(names) {
   for (const n of names) probe(n);
 }
 
+// Les fichiers passent par Web Audio, comme les sons synthétiques : une fois
+// le son débloqué par un premier appui, ils jouent même quand c'est un buzz
+// venu d'un téléphone qui les déclenche (iPad, Safari…).
 async function playFile(name) {
-  const a = await probe(name);
-  if (!a) return false;
-  try {
-    a.currentTime = 0;
-    await a.play();
-    return true;
-  } catch {
-    return false;
+  if (!ctx) return false;
+  if (!decoded.has(name)) {
+    decoded.set(
+      name,
+      probe(name).then((buf) => (buf ? ctx.decodeAudioData(buf.slice(0)).catch(() => null) : null)),
+    );
   }
+  const buffer = await decoded.get(name);
+  if (!buffer) return false;
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(master);
+  src.start();
+  return true;
 }
 
 // ---------- briques de synthèse ----------
@@ -192,8 +203,8 @@ const ANIMAL_SYNTHS = {
   chevre() {
     voice({ type: 'sawtooth', dur: 0.75, freq: [[0, 520], [0.2, 600], [0.75, 480]], filter: { type: 'bandpass', freq: 1900, q: 3 }, gain: 0.5, tremolo: { rate: 24, depth: 0.9 }, attack: 0.03, release: 0.25 });
   },
-  ane() {
-    // hi-han, hi-han
+  cheval() {
+    // son de secours (hennissement stylisé) si le fichier cheval.mp3 manque
     const parts = [
       [0, 0.32, 700, 900],
       [0.34, 0.4, 260, 200],

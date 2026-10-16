@@ -57,6 +57,8 @@ function freshState() {
 
 let S = freshState();
 const saved = store.get(SAVE_KEY);
+// l'âne a été remplacé par le cheval (vrai enregistrement fourni)
+if (saved?.teams) for (const t of saved.teams) if (t.animal === 'ane') t.animal = 'cheval';
 const canResume = saved && saved.v === 1 && saved.phase !== 'setup';
 if (saved && saved.v === 1) S.settings = { ...defaultSettings(), ...saved.settings };
 if (saved && saved.teams) S.teams = C.TEAM_PRESETS.map((p, i) => ({ ...p, name: saved.teams[i]?.name || p.name, animal: saved.teams[i]?.animal || p.animal, score: 0 }));
