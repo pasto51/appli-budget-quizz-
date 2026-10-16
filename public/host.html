@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a0f08">
+  <title>Burger Quiz maison — écran de jeu</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Nunito:wght@600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="host">
+  <header class="top" id="top"></header>
+  <main class="stage-wrap">
+    <section class="stage" id="stage"></section>
+  </main>
+  <nav class="controls" id="controls"></nav>
+  <section class="panels" id="panels" hidden></section>
+  <footer class="scores" id="scores"></footer>
+  <div class="overlay" id="pause"><div class="pause-box">☕<b>Pause</b><span>Touchez pour reprendre</span></div></div>
+  <div class="overlay" id="menu"></div>
+  <div class="toast" id="toast"></div>
+  <script type="module" src="host.js"></script>
+</body>
+</html>

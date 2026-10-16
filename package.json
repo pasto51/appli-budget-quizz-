@@ -1,0 +1,19 @@
+{
+  "name": "burger-quiz-maison",
+  "version": "1.0.0",
+  "description": "Jeu de soirée façon Burger Quiz : un écran animateur et des buzzers sur téléphone.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.0"
+  },
+  "license": "MIT"
+}
