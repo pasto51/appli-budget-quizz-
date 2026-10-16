@@ -26,6 +26,12 @@ export function unlockAudio() {
   s.start();
 }
 
+// pour la voix de l'animateur : même moteur audio (débloqué au premier appui)
+export function audioEngine() {
+  if (!ctx) unlockAudio();
+  return ctx ? { ctx, master } : null;
+}
+
 export function setMuted(v) {
   muted = !!v;
 }

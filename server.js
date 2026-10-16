@@ -11,6 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import QRCode from 'qrcode';
 import { Hub, handleHostMessage } from './public/shared/hub.js';
+import * as C from './public/shared/content.js';
+import { allowedTexts, norm, SHORT_TEXT } from './public/shared/voicelines.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
@@ -31,6 +33,143 @@ const MIME = {
   '.wav': 'audio/wav',
   '.m4a': 'audio/mp4',
 };
+
+// ---------- voix de l'animateur (ElevenLabs) ----------
+// La clé reste sur le serveur (variable d'environnement ELEVENLABS_API_KEY).
+
+const EL_KEY = process.env.ELEVENLABS_API_KEY || '';
+const EL_BASE = process.env.ELEVENLABS_API_BASE || 'https://api.elevenlabs.io';
+const EL_DEFAULT_VOICE = process.env.ELEVENLABS_VOICE_ID || '';
+const EL_MODELS = { eco: process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5', qualite: process.env.ELEVENLABS_MODEL_QUALITY || 'eleven_multilingual_v2' };
+const DAILY_CHARS = Number(process.env.VOICE_DAILY_CHARS) || 60000; // garde-fou sur les crédits
+const ALLOWED = allowedTexts(C);
+const TTS_DIR = path.join(os.tmpdir(), 'bq-tts');
+fs.mkdirSync(TTS_DIR, { recursive: true });
+const ttsMemory = new Map(); // clé -> Buffer (les plus récents)
+const ttsPending = new Map(); // clé -> Promise<Buffer>
+const usage = { day: '', chars: 0 };
+const ipHits = new Map(); // ip -> [horodatages des générations non mises en cache]
+let voicesCache = { at: 0, list: [] };
+
+async function listVoices() {
+  if (!EL_KEY) return [];
+  if (Date.now() - voicesCache.at < 10 * 60 * 1000 && voicesCache.list.length) return voicesCache.list;
+  const r = await fetch(`${EL_BASE}/v2/voices?page_size=100&include_total_count=false`, { headers: { 'xi-api-key': EL_KEY } });
+  if (!r.ok) throw new Error(`voices ${r.status}`);
+  const data = await r.json();
+  const list = (data.voices || []).map((v) => ({ id: v.voice_id, name: v.name, labels: v.labels || {}, category: v.category || '' }));
+  voicesCache = { at: Date.now(), list };
+  return list;
+}
+
+function readJson(req, max = 4096) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > max) {
+        reject(new Error('trop gros'));
+        req.destroy();
+      } else chunks.push(c);
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function overLimit(ip, short) {
+  const now = Date.now();
+  const hits = (ipHits.get(ip) || []).filter((t) => now - t < 3600 * 1000);
+  ipHits.set(ip, hits);
+  return hits.length >= (short ? 80 : 600);
+}
+
+async function synthesize(text, voice, model) {
+  const key = crypto.createHash('sha1').update(`${voice}|${model}|${text}`).digest('hex');
+  if (ttsMemory.has(key)) {
+    const buf = ttsMemory.get(key);
+    ttsMemory.delete(key);
+    ttsMemory.set(key, buf);
+    return { buf, cached: true };
+  }
+  const file = path.join(TTS_DIR, key + '.mp3');
+  if (fs.existsSync(file)) {
+    const buf = fs.readFileSync(file);
+    ttsMemory.set(key, buf);
+    return { buf, cached: true };
+  }
+  if (!ttsPending.has(key)) {
+    ttsPending.set(
+      key,
+      (async () => {
+        const r = await fetch(`${EL_BASE}/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
+          method: 'POST',
+          headers: { 'xi-api-key': EL_KEY, 'content-type': 'application/json', accept: 'audio/mpeg' },
+          body: JSON.stringify({ text, model_id: model, ...(model.startsWith('eleven_flash') ? { language_code: 'fr' } : {}) }),
+        });
+        if (!r.ok) throw new Error(`ElevenLabs ${r.status} ${(await r.text()).slice(0, 200)}`);
+        const buf = Buffer.from(await r.arrayBuffer());
+        fs.writeFile(file, buf, () => {});
+        ttsMemory.set(key, buf);
+        while (ttsMemory.size > 400) ttsMemory.delete(ttsMemory.keys().next().value);
+        return buf;
+      })().finally(() => ttsPending.delete(key)),
+    );
+  }
+  return { buf: await ttsPending.get(key), cached: false };
+}
+
+async function handleTts(req, res) {
+  const fail = (code, msg) => {
+    res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: msg }));
+  };
+  if (!EL_KEY) return fail(503, 'Voix non configurée sur le serveur');
+  let body;
+  try {
+    body = await readJson(req);
+  } catch {
+    return fail(400, 'Requête invalide');
+  }
+  const text = norm(body.text || '');
+  if (!text) return fail(400, 'Texte vide');
+  const known = ALLOWED.has(text);
+  if (!known && text.length > SHORT_TEXT) return fail(403, 'Texte non autorisé');
+  let voice = String(body.voice || EL_DEFAULT_VOICE);
+  try {
+    const voices = await listVoices();
+    if (!voices.some((v) => v.id === voice)) voice = EL_DEFAULT_VOICE || voices[0]?.id || '';
+  } catch {}
+  if (!voice) return fail(503, 'Aucune voix disponible');
+  const model = EL_MODELS[body.quality] || EL_MODELS.eco;
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  const today = new Date().toISOString().slice(0, 10);
+  if (usage.day !== today) Object.assign(usage, { day: today, chars: 0 });
+  try {
+    // le cache ne coûte rien : on ne compte que les nouvelles générations
+    const key = crypto.createHash('sha1').update(`${voice}|${model}|${text}`).digest('hex');
+    const isCached = ttsMemory.has(key) || fs.existsSync(path.join(TTS_DIR, key + '.mp3'));
+    if (!isCached) {
+      if (overLimit(ip, !known)) return fail(429, 'Trop de demandes');
+      if (usage.chars + text.length > DAILY_CHARS) return fail(429, 'Quota de voix du jour atteint');
+      ipHits.get(ip).push(Date.now());
+      usage.chars += text.length;
+    }
+    const { buf } = await synthesize(text, voice, model);
+    res.writeHead(200, { 'content-type': 'audio/mpeg', 'content-length': buf.length, 'cache-control': 'private, max-age=86400' });
+    res.end(buf);
+  } catch (e) {
+    console.error('voix :', e.message);
+    fail(502, 'Erreur ElevenLabs');
+  }
+}
 
 /** @type {Map<string, {code:string, hostToken:string, remoteKey:string, hub:Hub, host:any, sockets:Map<string, any>, remotes:Set<any>, remoteState:any, touched:number}>} */
 const rooms = new Map();
@@ -86,7 +225,24 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/info') {
     res.writeHead(200, { 'content-type': MIME['.json'], 'cache-control': 'no-store' });
-    res.end(JSON.stringify({ addresses: lanAddresses(), port: PORT }));
+    res.end(JSON.stringify({ addresses: lanAddresses(), port: PORT, voice: !!EL_KEY }));
+    return;
+  }
+
+  if (url.pathname === '/api/voices') {
+    try {
+      const list = await listVoices();
+      res.writeHead(200, { 'content-type': MIME['.json'], 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ voices: list, default: EL_DEFAULT_VOICE }));
+    } catch (e) {
+      console.error('voix :', e.message);
+      res.writeHead(502, { 'content-type': MIME['.json'] }).end(JSON.stringify({ voices: [], error: 'ElevenLabs injoignable' }));
+    }
+    return;
+  }
+
+  if (url.pathname === '/api/tts' && req.method === 'POST') {
+    await handleTts(req, res);
     return;
   }
 

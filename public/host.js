@@ -5,7 +5,8 @@ import { Hub, handleHostMessage } from './shared/hub.js';
 import { Socket } from './shared/net.js';
 import { renderControls, updateTimers, esc } from './shared/controls.js';
 import { unlockAudio, play, setMuted, isMuted, preloadSounds } from './shared/sounds.js';
-import { say, stopVoice } from './shared/voice.js';
+import { say as voiceSay, stopVoice, configureVoice, prefetch, voiceEnabled, voiceBusy } from './shared/voice.js';
+import { LINES, GOOD, BAD, pickOne } from './shared/voicelines.js';
 import * as C from './shared/content.js';
 
 const SAVE_KEY = 'bq.host';
@@ -30,7 +31,7 @@ const store = {
 // ---------- état ----------
 
 function defaultSettings() {
-  return { nTeams: 3, length: 'long', presenter: false, twistRate: 0.2, selTimer: true, buzzDuringRead: false, answerTimer: 10, suspense: true, catchup: true, rounds: [...C.ROUND_ORDER] };
+  return { nTeams: 3, length: 'long', presenter: false, voice: false, voiceId: '', voiceQuality: 'eco', twistRate: 0.2, selTimer: true, buzzDuringRead: false, answerTimer: 10, suspense: true, catchup: true, rounds: [...C.ROUND_ORDER] };
 }
 
 function freshState() {
@@ -147,6 +148,38 @@ function pickFresh(bank, list, n) {
 
 // tirage pour les défis : un élément jamais tiré de la liste « nom »
 const pickDefi = (name, list) => pickFresh(`defi:${name}`, list, 1)[0];
+
+// ---------- voix de l'animateur ----------
+
+let voiceInfo = { available: false, voices: [], loaded: false };
+
+async function loadVoiceInfo() {
+  try {
+    const info = await (await fetch('/api/info')).json();
+    voiceInfo.available = !!info.voice;
+    if (voiceInfo.available) {
+      const v = await (await fetch('/api/voices')).json();
+      voiceInfo.voices = v.voices || [];
+      if (!S.settings.voiceId) S.settings.voiceId = v.default || voiceInfo.voices[0]?.id || '';
+    }
+  } catch {}
+  voiceInfo.loaded = true;
+  if (S.phase === 'setup') render();
+}
+
+function applyVoiceConfig() {
+  configureVoice({ enabled: !!(S.settings.voice && voiceInfo.available), voice: S.settings.voiceId, quality: S.settings.voiceQuality });
+}
+
+// lit des phrases à la suite ; rend une promesse résolue à la fin de la lecture
+const say = (parts, opts) => voiceSay(parts, opts);
+const answerParts = (R) => (R.type === 'selpoivre' ? [R.item.sel ? LINES.sel : LINES.poivre, R.item.why] : [R.item.a]);
+const questionText = (item, type) => (type === 'addition' ? item.words.join(', ') : item.q);
+
+function twistParts(tw) {
+  if (tw.boost) return [LINES.twist, tw.title, tw.boost.map((id) => teamById(id).name).join(' et '), LINES.pouce];
+  return [LINES.twist, tw.title, tw.text];
+}
 
 // ---------- transport (réseau ou tablette unique) ----------
 
@@ -290,6 +323,7 @@ function announce(text, team) {
   void el.offsetWidth;
   el.classList.add('show');
   play('lead');
+  if (!voiceBusy()) say([team.name, LINES.lead]);
   clearTimeout(announceTimer);
   announceTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
@@ -398,6 +432,8 @@ function startGame() {
   S.phase = S.mode === 'net' ? 'lobby' : 'round-intro';
   if (S.phase === 'round-intro') introRound();
   connect();
+  applyVoiceConfig();
+  prefetch([...Object.values(LINES), ...GOOD, ...BAD]);
   hostSend({ t: 'teams', teams: activeTeams() });
   if (S.mode === 'net') net?.send({ t: 'remote:config', allow: !!S.settings.presenter });
   sync();
@@ -409,7 +445,7 @@ function introRound() {
   clearSecrets();
   const type = roundType();
   play(type === 'burger' ? 'burger' : 'round');
-  say(`manche:${type}`, `${C.ROUNDS[type].title}. ${roundRules(type)}`);
+  say([C.ROUNDS[type].title, roundRules(type)]);
 }
 
 function startRound() {
@@ -458,7 +494,7 @@ function endRound() {
     play('fanfare');
     const w = ranking()[0];
     setTimeout(() => play(w.animal), 2400);
-    say('podium', `Et l’équipe gagnante est… ${w.name} !`);
+    say([LINES.winnerIs, w.name]);
   } else introRound();
   sync();
 }
@@ -575,7 +611,7 @@ function startItem() {
   if (R.twist) {
     R.step = 'twist';
     play('twist');
-    say(`regle:${R.twist.id}`, `Règle bizarre ! ${R.twist.title}. ${R.twist.text}`);
+    say(twistParts(R.twist));
   } else beginRead();
   sync();
 }
@@ -584,9 +620,16 @@ function beginRead() {
   const R = S.R;
   R.qid = newQid();
   R.step = 'read';
-  const text = R.type === 'addition' ? R.item.words.join(', ') : R.item.q;
-  R.readUntil = Date.now() + (S.settings.buzzDuringRead && R.type !== 'selpoivre' ? 0 : readDelayMs(text));
-  say(`q:${R.type}:${R.qi}`, text);
+  const text = questionText(R.item, R.type);
+  const immediate = S.settings.buzzDuringRead && R.type !== 'selpoivre';
+  R.voiceRead = voiceEnabled() && !immediate;
+  // avec la voix : on attend la fin de la lecture (25 s maximum si la voix ne répond pas)
+  R.readUntil = Date.now() + (immediate ? 0 : R.voiceRead ? 25000 : readDelayMs(text));
+  const qid = R.qid;
+  say([text]).then(() => {
+    if (R.voiceRead && S.R === R && R.qid === qid && R.step === 'read' && !S.paused) endRead();
+  });
+  prefetch(answerParts(R));
 }
 
 // appelé par l'horloge quand le temps de lecture est passé
@@ -606,6 +649,7 @@ function onBuzz(teamId, qid) {
   const R = S.R;
   if (!R || qid !== R.qid || R.step !== 'open') return;
   buzzOpenKey = null; // le hub a déjà fermé le buzzer
+  stopVoice();
   R.winner = teamId;
   R.step = 'answer';
   R.deadline = answerDeadline();
@@ -637,6 +681,7 @@ function judgeBuzz(ok) {
       R.winner = null;
       R.qid = newQid();
       R.step = 'open';
+      say([pickOne(BAD), LINES.othersTurn]);
       sync();
       return;
     }
@@ -653,6 +698,7 @@ function startSuspense(next) {
   R.suspenseUntil = Date.now() + 2200;
   R.suspenseNext = next;
   play('drumroll');
+  say([R.type === 'selpoivre' ? LINES.suspenseSel : LINES.suspenseVote]);
   sync();
 }
 
@@ -680,7 +726,11 @@ function reveal() {
     play('reveal');
   }
   applySwap();
-  say(`r:${R.type}:${R.qi}`, R.type === 'selpoivre' ? (R.item.sel ? 'Sel !' : 'Poivre !') + ' ' + R.item.why : R.item.a);
+  const react = R.timedOut ? [LINES.timeout] : R.lastOk === true ? [pickOne(GOOD)] : R.lastOk === false ? [pickOne(BAD)] : [];
+  R.timedOut = false;
+  say([...(R.type === 'selpoivre' ? [] : react), ...answerParts(R)]);
+  const next = R.items?.[R.qi + 1];
+  if (next) prefetch([questionText(next, R.type)]);
   sync();
 }
 
@@ -724,7 +774,7 @@ function startMenuTeam() {
   R.qid = newQid();
   R.twist = null;
   R.theme = null;
-  say('menus:choix', `${teamById(R.order[R.ti]).name}, choisissez votre menu.`);
+  say([teamById(R.order[R.ti]).name, LINES.menuPick]);
   sync();
 }
 
@@ -751,12 +801,25 @@ function startMenuQuestion() {
   if (R.twist) {
     R.step = 'twist';
     play('twist');
-  } else {
-    R.step = 'judge';
-    R.deadline = answerDeadline();
-    say(`menus:${R.theme}:${R.qi}`, R.item.q);
-  }
+  } else startMenuJudge();
   sync();
+}
+
+// la question du menu est lue ; le chrono de réponse démarre à la fin de la lecture
+function startMenuJudge() {
+  const R = S.R;
+  R.step = 'judge';
+  const qid = R.qid;
+  if (voiceEnabled()) {
+    R.deadline = 0;
+    say([R.item.q]).then(() => {
+      if (S.R === R && R.qid === qid && R.step === 'judge' && !R.deadline) {
+        R.deadline = answerDeadline();
+        sync();
+      }
+    });
+  } else R.deadline = answerDeadline();
+  prefetch([R.item.a]);
 }
 
 function judgeMenu(ok) {
@@ -771,6 +834,8 @@ function judgeMenu(ok) {
   } else play('bad');
   R.step = 'reveal';
   applySwap();
+  say([R.timedOut ? LINES.timeout : pickOne(ok ? GOOD : BAD), R.item.a]);
+  R.timedOut = false;
   sync();
 }
 
@@ -826,7 +891,7 @@ function startPerformer() {
   clearSecrets();
   if (R.type === 'pubs') {
     R.product = R.products[R.ti] || C.PRODUCTS[Math.floor(Math.random() * C.PRODUCTS.length)];
-    say('pubs:produit', `${teamById(team).name}, votre produit : ${R.product}`);
+    say([teamById(team).name, LINES.yourProduct, R.product]);
   } else {
     // plus d'équipes que de défis : on reprend un défi au hasard, avec un contenu différent
     const d = C.DEFIS.find((x) => x.id === R.defis[R.ti]) || C.DEFIS[Math.floor(Math.random() * C.DEFIS.length)];
@@ -839,7 +904,7 @@ function startPerformer() {
     R.show = made.show || null;
     R.revealText = made.reveal || null;
     if (made.secret) giveSecret(team, d.secret, made.secret);
-    say(`defi:${d.id}`, `${teamById(team).name} : défi ${d.title}. ${d.rules}`);
+    say([teamById(team).name, LINES.defi, d.title, d.rules]);
   }
   play('round');
   sync();
@@ -854,7 +919,7 @@ function startPubs() {
   R.qid = newQid();
   clearSecrets();
   R.order.forEach((team, i) => giveSecret(team, 'team', { label: 'Votre produit à vendre', text: R.products[i] }));
-  say('pubs:brief', 'Chaque équipe a reçu son produit sur son téléphone. Préparez vos pubs !');
+  say([LINES.pubsBrief]);
   play('round');
   sync();
 }
@@ -869,7 +934,7 @@ function startPub() {
   R.resultText = '';
   R.bonus = false;
   R.qid = newQid();
-  say('pubs:tour', `Au tour de ${teamById(R.order[R.ti]).name}. Produit : ${R.product}`);
+  say([LINES.pubTurn, teamById(R.order[R.ti]).name, LINES.yourProduct, R.product]);
   sync();
 }
 
@@ -893,10 +958,12 @@ function onTimeout() {
   // chrono de réponse écoulé : la réponse compte comme fausse
   if (['nuggets', 'addition', 'burger'].includes(R.type) && R.step === 'answer') {
     toast('⏱ Temps écoulé !');
+    R.timedOut = true;
     return judgeBuzz(false);
   }
   if (R.type === 'menus' && R.step === 'judge') {
     toast('⏱ Temps écoulé !');
+    R.timedOut = true;
     return judgeMenu(false);
   }
   if (R.type === 'pubs' && R.step === 'prep') return startPub();
@@ -980,6 +1047,8 @@ function togglePause() {
       if (S.R.deadline) S.R.deadline += d;
       if (S.R.readUntil) S.R.readUntil += d;
       if (S.R.suspenseUntil) S.R.suspenseUntil += d;
+      // la lecture de la question a été coupée par la pause : on la relit
+      if (S.R.step === 'read' && S.R.voiceRead) beginRead();
     }
   }
   sync();
@@ -1018,6 +1087,7 @@ function toast(text) {
 }
 
 function render() {
+  applyVoiceConfig();
   document.body.dataset.phase = S.phase;
   const n = activeTeams().length;
   document.body.dataset.density = n > 8 ? 'lots' : n > 4 ? 'many' : 'few';
@@ -1302,6 +1372,7 @@ function renderSetup() {
         </div>
         <div class="setup-teams">${teamsHtml}</div>
       </div>
+      ${voiceCard(st)}
       <div class="card">
         <h2>Durée de la partie</h2>
         <div class="seg seg-3">
@@ -1332,6 +1403,31 @@ function renderSetup() {
     </div>`,
     btn('create', S.mode === 'net' ? 'Créer la salle 🍔' : 'Lancer la partie 🍔', 'btn-primary btn-big', st.rounds.length ? '' : 'disabled'),
   );
+}
+
+function voiceCard(st) {
+  if (!voiceInfo.loaded) return '';
+  if (!voiceInfo.available)
+    return `<div class="card"><h2>🎙️ Voix de l’animateur</h2><p class="hint">Pas encore disponible : la clé ElevenLabs n’est pas configurée sur le serveur (voir le README).</p></div>`;
+  const opts = voiceInfo.voices
+    .map((v) => {
+      const lab = [v.labels.gender, v.labels.accent, v.labels.language].filter(Boolean).join(', ');
+      return `<option value="${esc(v.id)}" ${st.voiceId === v.id ? 'selected' : ''}>${esc(v.name)}${lab ? ` (${esc(lab)})` : ''}</option>`;
+    })
+    .join('');
+  return `<div class="card">
+    <h2>🎙️ Voix de l’animateur</h2>
+    <label class="chk"><input type="checkbox" data-set="voice" ${st.voice ? 'checked' : ''}> Un animateur lit les questions, les règles et les réponses (ElevenLabs)</label>
+    ${st.voice ? `<div class="opts voice-opts">
+      <label>Voix <select data-set="voiceId">${opts}</select></label>
+      <label>Qualité <select data-set="voiceQuality">
+        <option value="eco" ${st.voiceQuality === 'eco' ? 'selected' : ''}>Rapide et économique</option>
+        <option value="qualite" ${st.voiceQuality === 'qualite' ? 'selected' : ''}>Haute qualité (plus de crédits)</option>
+      </select></label>
+      ${btn('voice-test', '🔊 Écouter la voix', 'btn-ghost btn-small')}
+      <p class="hint">Avec la voix, les buzzers s’ouvrent quand l’animateur a fini de lire la question.</p>
+    </div>` : ''}
+  </div>`;
 }
 
 function renderLobby() {
@@ -1440,7 +1536,7 @@ function renderBuzzRound(R) {
   let controls = '';
   if (R.step === 'read') {
     const total = readDelayMs(R.type === 'addition' ? R.item.words.join(' ') : R.item.q);
-    status = `<div class="status">Lisez bien… <div class="readbar"><i style="animation-duration:${Math.max(0, R.readUntil - Date.now())}ms;--from:${1 - Math.max(0, R.readUntil - Date.now()) / total}"></i></div></div>`;
+    status = R.voiceRead ? `<div class="status">🎙️ L’animateur lit la question…</div>` : `<div class="status">Lisez bien… <div class="readbar"><i style="animation-duration:${Math.max(0, R.readUntil - Date.now())}ms;--from:${1 - Math.max(0, R.readUntil - Date.now()) / total}"></i></div></div>`;
     controls = btn('open-now', 'Ouvrir les buzzers', 'btn-ghost') + ' ' + btn('nobody', 'Personne ne sait', 'btn-ghost');
   } else if (R.step === 'open') {
     const ex = R.excluded.map((id) => teamById(id).name).join(', ');
@@ -1618,6 +1714,9 @@ function doAct(act, d, fromRemote) {
     case 'mode':
       S.mode = d.v;
       return render();
+    case 'voice-test':
+      applyVoiceConfig();
+      return say([LINES.welcome]);
     case 'length':
       S.settings.length = d.v;
       return render();
@@ -1656,8 +1755,7 @@ function doAct(act, d, fromRemote) {
       beginRead();
       return sync();
     case 'twist-ok-menu':
-      R.step = 'judge';
-      R.deadline = answerDeadline();
+      startMenuJudge();
       return sync();
     case 'open-now':
       return endRead();
@@ -1803,6 +1901,12 @@ document.addEventListener('change', (e) => {
   if (el.dataset.set === 'suspense') S.settings.suspense = el.checked;
   if (el.dataset.set === 'catchup') S.settings.catchup = el.checked;
   if (el.dataset.set === 'presenter') S.settings.presenter = el.checked;
+  if (el.dataset.set === 'voice') {
+    S.settings.voice = el.checked;
+    return render();
+  }
+  if (el.dataset.set === 'voiceId') S.settings.voiceId = el.value;
+  if (el.dataset.set === 'voiceQuality') S.settings.voiceQuality = el.value;
 });
 
 // clavier : Espace = action principale, P = pause, 1/2/3 = buzzers en mode tablette
@@ -1827,5 +1931,6 @@ document.addEventListener('keydown', (e) => {
 $('pause').addEventListener('click', () => S.paused && togglePause());
 $('menu').addEventListener('click', (e) => e.target.id === 'menu' && $('menu').classList.remove('show'));
 
+loadVoiceInfo();
 preloadSounds([...C.ANIMALS.map((a) => a.id), 'good', 'bad', 'twist', 'round', 'fanfare', 'burger', 'tick', 'timeup', 'reveal', 'pop']);
 render();

@@ -78,9 +78,25 @@ Les contenus marqués `// ajouts` ne viennent pas du cahier des charges : **à r
 
 ## Sons et voix
 
-- Les **cris d'animaux et bruitages** sont fabriqués par le navigateur (Web Audio) : aucun fichier sous droits. Pour utiliser de vrais enregistrements, voir [`public/sounds/LISEZMOI.md`](public/sounds/LISEZMOI.md).
-- La **voix de l'animateur** n'est pas encore faite : elle sera produite avec ElevenLabs. Chaque réplique passe déjà par `say(clé, texte)` dans [`public/shared/voice.js`](public/shared/voice.js), il suffira d'y jouer le fichier correspondant.
+- Les **cris d'animaux** sont de vrais enregistrements recalés (voir [`public/sounds/LISEZMOI.md`](public/sounds/LISEZMOI.md)) ; les **bruitages** sont fabriqués par le navigateur.
 - Sur iPhone, le son ne démarre qu'après un premier appui : c'est le clic sur « Créer la salle » (écran) ou sur un bouton (téléphone) qui l'active.
+
+### Voix de l'animateur (ElevenLabs, optionnelle)
+
+À cocher au lancement (« 🎙️ Voix de l'animateur »), avec le choix de la voix et de la qualité. L'animateur lit les règles des manches, les règles bizarres, les questions, les réponses, réagit (« Bravo ! », « Raté ! ») et annonce le nouveau leader. Avec la voix, les buzzers s'ouvrent quand il a fini de lire la question.
+
+**Mise en route (une seule fois)** :
+1. Sur [elevenlabs.io](https://elevenlabs.io) : *Developers* → *API Keys* → créer une clé (droits « Text to Speech » et « Voices » en lecture).
+2. Pour choisir des voix françaises : *Voice Library*, chercher « French », ajouter les voix qui vous plaisent à « My Voices ». Elles apparaîtront dans la liste au lancement du jeu.
+3. Sur Render : votre service → *Environment* → ajouter la variable `ELEVENLABS_API_KEY` avec la clé, puis enregistrer (le site redémarre).
+
+Variables facultatives : `ELEVENLABS_VOICE_ID` (voix par défaut), `ELEVENLABS_MODEL` (par défaut `eleven_flash_v2_5`, rapide et économique), `ELEVENLABS_MODEL_QUALITY` (par défaut `eleven_multilingual_v2`), `VOICE_DAILY_CHARS` (plafond de caractères générés par jour, 60 000 par défaut).
+
+**Sécurité et coût** :
+- la clé reste sur le serveur, jamais dans le navigateur ;
+- le serveur ne fait lire que les textes du jeu (questions, réponses, règles, répliques) ou des textes très courts (noms d'équipe) : impossible de lui faire lire n'importe quoi ;
+- chaque phrase n'est générée qu'une fois puis gardée en cache (jusqu'au prochain redémarrage du serveur) ;
+- une partie Long consomme de l'ordre de 5 000 à 8 000 caractères en qualité « économique » (le modèle Flash coûte deux fois moins de crédits par caractère).
 
 ## Comment ça marche
 

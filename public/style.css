@@ -428,3 +428,6 @@ body.has-remote .controls { display: none; }
 .seg-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 .presenter-opt { margin-top: 12px; }
+
+.voice-opts { margin-top: 10px; }
+.voice-opts .btn { align-self: flex-start; }
