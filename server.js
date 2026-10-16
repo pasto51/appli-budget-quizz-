@@ -32,7 +32,7 @@ const MIME = {
   '.m4a': 'audio/mp4',
 };
 
-/** @type {Map<string, {code:string, hostToken:string, hub:Hub, host:any, sockets:Map<string, any>, touched:number}>} */
+/** @type {Map<string, {code:string, hostToken:string, remoteKey:string, hub:Hub, host:any, sockets:Map<string, any>, remotes:Set<any>, remoteState:any, touched:number}>} */
 const rooms = new Map();
 
 function newCode() {
@@ -47,14 +47,19 @@ function send(ws, msg) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
 }
 
-function createRoom(code = newCode(), hostToken = crypto.randomUUID()) {
-  const room = { code, hostToken, host: null, sockets: new Map(), touched: Date.now() };
+function createRoom(code = newCode(), hostToken = crypto.randomUUID(), remoteKey = crypto.randomBytes(9).toString('base64url')) {
+  // remoteKey : clé secrète de la télécommande du présentateur (dans son QR code)
+  const room = { code, hostToken, remoteKey, host: null, sockets: new Map(), remotes: new Set(), remoteState: null, touched: Date.now() };
   room.hub = new Hub({
     toHost: (msg) => send(room.host, msg),
     toDevice: (id, msg) => send(room.sockets.get(id), msg),
   });
   rooms.set(code, room);
   return room;
+}
+
+function sendRemoteCount(room) {
+  send(room.host, { t: 'remotes', count: room.remotes.size });
 }
 
 function lanAddresses() {
@@ -152,14 +157,30 @@ wss.on('connection', (ws) => {
         if (msg.t === 'host:resume' && existing && existing.hostToken === msg.hostToken) room = existing;
         else if (msg.t === 'host:resume' && !existing && msg.code && msg.hostToken) {
           // le serveur a redémarré : on recrée la salle avec le même code
-          room = createRoom(String(msg.code).toUpperCase(), String(msg.hostToken));
+          room = createRoom(String(msg.code).toUpperCase(), String(msg.hostToken), msg.remoteKey ? String(msg.remoteKey) : undefined);
         } else room = createRoom();
         if (room.host && room.host !== ws) room.host.close(4000, 'remplacé');
         room.host = ws;
         role = 'host';
         room.touched = Date.now();
-        send(ws, { t: 'room', code: room.code, hostToken: room.hostToken });
+        send(ws, { t: 'room', code: room.code, hostToken: room.hostToken, remoteKey: room.remoteKey });
         room.hub.sendDeviceCounts();
+        sendRemoteCount(room);
+        return;
+      }
+      if (msg.t === 'remote:join') {
+        const r = rooms.get(String(msg.code || '').toUpperCase());
+        if (!r || !msg.key || msg.key !== r.remoteKey) {
+          send(ws, { t: 'error', error: 'Lien de présentateur invalide. Rescannez le QR code du présentateur.' });
+          return;
+        }
+        room = r;
+        role = 'remote';
+        room.remotes.add(ws);
+        room.touched = Date.now();
+        send(ws, { t: 'joined', code: room.code });
+        if (room.remoteState) send(ws, { t: 'remote:state', state: room.remoteState });
+        sendRemoteCount(room);
         return;
       }
       if (msg.t === 'join') {
@@ -183,6 +204,15 @@ wss.on('connection', (ws) => {
     }
 
     room.touched = Date.now();
+    if (role === 'remote') {
+      if (msg.t === 'remote:act') send(room.host, { t: 'remote:act', act: String(msg.act || ''), data: msg.data || {} });
+      return;
+    }
+    if (role === 'host' && msg.t === 'remote:state') {
+      room.remoteState = msg.state;
+      for (const r of room.remotes) send(r, { t: 'remote:state', state: msg.state });
+      return;
+    }
     if (role === 'host') handleHostMessage(room.hub, msg);
     else room.hub.handleDeviceMessage(deviceId, msg);
   });
@@ -190,6 +220,10 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     if (!room) return;
     if (role === 'host' && room.host === ws) room.host = null;
+    if (role === 'remote') {
+      room.remotes.delete(ws);
+      sendRemoteCount(room);
+    }
     if (role === 'device' && room.sockets.get(deviceId) === ws) {
       room.sockets.delete(deviceId);
       room.hub.deviceDisconnect(deviceId);

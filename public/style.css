@@ -365,3 +365,27 @@ kbd { font-family: var(--body); font-size: .75em; background: rgba(0,0,0,.25); b
   .top-round b { font-size: 1.05rem; }
   .logo-short { display: none; }
 }
+
+/* ---------- présentateur ---------- */
+body.has-remote .controls { display: none; }
+.qr-small { width: min(60vw, 280px); height: min(60vw, 280px); margin: 0 auto; }
+.presenter-box { text-align: center; }
+.remote { min-height: 100dvh; }
+.remote-main { display: flex; flex-direction: column; gap: 14px; padding: 16px; max-width: 560px; margin: 0 auto; }
+.r-round { font-family: var(--display); color: var(--yellow); font-size: 1.2rem; }
+.r-round span { font-family: var(--body); color: var(--muted); font-size: .9rem; margin-left: 6px; }
+.r-headline { font-size: 1.2rem; font-weight: 800; line-height: 1.3; }
+.r-buzzed { background: var(--yellow); color: #2b1d00; border-radius: 12px; padding: 8px 12px; font-weight: 800; }
+.r-secret { background: #fff6dc; color: #2b1d00; border-radius: 14px; padding: 10px 14px; box-shadow: 0 0 0 3px var(--yellow); }
+.r-secret small { font-weight: 800; color: #7a5a2a; text-transform: uppercase; letter-spacing: .05em; }
+.r-secret div { font-family: var(--display); font-size: 1.5rem; line-height: 1.15; margin-top: 4px; }
+.r-secret p { margin: 6px 0 0; }
+.r-buttons { display: flex; flex-direction: column; gap: 10px; }
+.r-buttons .btn { width: 100%; }
+.r-teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.r-team { background: var(--team); color: var(--ink); border-radius: 10px; padding: 6px 10px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; font-weight: 800; gap: 4px; }
+.r-team b { font-family: var(--display); font-size: 1.4rem; }
+.r-adj { display: flex; gap: 6px; width: 100%; }
+.r-adj button { flex: 1; border: 0; border-radius: 8px; padding: 6px; background: rgba(0,0,0,.25); color: inherit; font-weight: 800; }
+.r-tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding-bottom: 20px; }
+.r-tools .btn { font-size: .9rem; padding: .5em 1em; }

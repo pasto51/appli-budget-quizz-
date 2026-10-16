@@ -40,6 +40,7 @@ function freshState() {
     mode: 'net',
     code: null,
     hostToken: null,
+    remoteKey: null,
     settings: defaultSettings(),
     teams: C.TEAM_PRESETS.map((t) => ({ ...t, score: 0 })),
     ri: 0,
@@ -50,6 +51,7 @@ function freshState() {
     pausedAt: 0,
     showPanels: false,
     adjust: false,
+    secrets: {}, // teamId -> { payload, target } : cartes secrètes en cours
   };
 }
 
@@ -66,9 +68,10 @@ let net = null;
 let hub = null;
 let connStatus = 'idle';
 let joinUrl = '';
+let joinOrigin = '';
+let remoteCount = 0; // télécommandes de présentateur connectées
 let lastViews = {}; // teamId -> JSON envoyé
 let bumped = {}; // teamId -> horodatage du dernier changement de score
-const localSecrets = {}; // teamId -> carte secrète (affichée sur les panneaux de l'écran)
 
 const activeTeams = () => S.teams.slice(0, S.settings.nTeams);
 const teamById = (id) => S.teams.find((t) => t.id === id);
@@ -118,7 +121,7 @@ function connect() {
   }
   if (net) return;
   net = new Socket({
-    onOpen: () => net.send(S.code ? { t: 'host:resume', code: S.code, hostToken: S.hostToken } : { t: 'host:create' }),
+    onOpen: () => net.send(S.code ? { t: 'host:resume', code: S.code, hostToken: S.hostToken, remoteKey: S.remoteKey } : { t: 'host:create' }),
     onMessage: onHubMessage,
     onStatus: (s) => {
       connStatus = s;
@@ -132,6 +135,8 @@ function onHubMessage(msg) {
     case 'room':
       S.code = msg.code;
       S.hostToken = msg.hostToken;
+      S.remoteKey = msg.remoteKey;
+      lastRemote = '';
       computeJoinUrl();
       resync();
       break;
@@ -150,6 +155,14 @@ function onHubMessage(msg) {
     case 'action':
       onAction(msg.team, msg.qid, msg.value);
       break;
+    case 'remotes':
+      remoteCount = msg.count;
+      if (remoteCount) toast('🎤 Télécommande du présentateur connectée');
+      render();
+      return;
+    case 'remote:act':
+      onRemoteAct(msg.act, msg.data || {});
+      return;
     case 'secret:sent':
       if (S.mode === 'net' && msg.devices === 0) toast(`${teamById(msg.team)?.name} n’a pas de téléphone connecté : la carte secrète est sur l’écran.`);
       return;
@@ -161,7 +174,7 @@ function resync() {
   lastViews = {};
   buzzOpenKey = null;
   hostSend({ t: 'teams', teams: activeTeams() });
-  for (const [team, secret] of Object.entries(localSecrets)) if (secret) hostSend({ t: 'secret', team, target: S.R?.defi?.secret || 'device', payload: secret });
+  for (const [team, sec] of Object.entries(S.secrets || {})) hostSend({ t: 'secret', team, target: sec.target, payload: sec.payload });
   sync();
 }
 
@@ -173,6 +186,7 @@ async function computeJoinUrl() {
       if (info.addresses?.length) origin = `${location.protocol}//${info.addresses[0]}:${location.port || info.port}`;
     } catch {}
   }
+  joinOrigin = origin;
   joinUrl = `${origin}/play.html?code=${S.code}`;
   if (S.phase === 'lobby') render();
 }
@@ -285,10 +299,9 @@ function viewFor(teamId) {
       }
       if (R.step === 'result') return { screen: 'wait', title: R.points > 0 ? `${activeName} : +${R.points}` : `${activeName} : 0 point`, text: R.resultText };
       if (R.type === 'pubs') {
-        if (teamId === active) {
-          const what = R.step === 'prep' ? 'Concertation !' : R.step === 'show' ? 'Action ! Jouez votre pub' : 'Votre produit';
-          return { screen: 'wait', title: what, text: R.product, deadline: R.deadline || undefined };
-        }
+        if (R.step === 'brief') return { screen: 'wait', title: 'Fausses pubs', text: 'Votre produit est sur votre carte secrète. Ne le dites pas aux autres !' };
+        if (R.step === 'prep') return { screen: 'wait', title: 'Concertation !', text: 'Préparez votre pub, toutes les équipes en même temps', deadline: R.deadline || undefined };
+        if (teamId === active) return { screen: 'wait', title: R.step === 'show' ? 'Action ! Jouez votre pub' : 'À vous !', text: R.product, deadline: R.deadline || undefined };
         return { screen: 'wait', title: `Pub de ${activeName}`, text: R.product, deadline: R.deadline || undefined };
       }
       const title = teamId === active ? `Défi : ${R.defiTitle}` : `${activeName} : ${R.defiTitle}`;
@@ -346,7 +359,7 @@ function startRound() {
     }
     case 'pubs':
       S.R = { type, order, ti: 0, products: pickFresh('pubs', C.PRODUCTS.length, order.length).map((i) => C.PRODUCTS[i]) };
-      return startPerformer();
+      return startPubs();
     case 'defis':
       S.R = { type, order, ti: 0, defis: pickFresh('defis', C.DEFIS.length, order.length) };
       return startPerformer();
@@ -675,13 +688,38 @@ function startPerformer() {
     R.defiSeconds = d.seconds;
     R.show = made.show || null;
     R.revealText = made.reveal || null;
-    if (made.secret) {
-      localSecrets[team] = made.secret;
-      hostSend({ t: 'secret', team, target: d.secret, payload: made.secret });
-    }
+    if (made.secret) giveSecret(team, d.secret, made.secret);
     say(`defi:${d.id}`, `${teamById(team).name} : défi ${d.title}. ${d.rules}`);
   }
   play('round');
+  sync();
+}
+
+// Fausses pubs : chaque équipe reçoit son produit en secret, tout le monde se
+// concerte en même temps, puis les équipes jouent leur pub à tour de rôle.
+function startPubs() {
+  const R = S.R;
+  R.step = 'brief';
+  R.deadline = 0;
+  R.qid = newQid();
+  clearSecrets();
+  R.order.forEach((team, i) => giveSecret(team, 'team', { label: 'Votre produit à vendre', text: R.products[i] }));
+  say('pubs:brief', 'Chaque équipe a reçu son produit sur son téléphone. Préparez vos pubs !');
+  play('round');
+  sync();
+}
+
+function startPub() {
+  const R = S.R;
+  R.step = 'ready';
+  R.product = R.products[R.ti];
+  R.votes = {};
+  R.deadline = 0;
+  R.points = 0;
+  R.resultText = '';
+  R.bonus = false;
+  R.qid = newQid();
+  say('pubs:tour', `Au tour de ${teamById(R.order[R.ti]).name}. Produit : ${R.product}`);
   sync();
 }
 
@@ -702,7 +740,7 @@ function onTimeout() {
     reveal();
     return;
   }
-  if (R.type === 'pubs' && R.step === 'prep') R.step = 'ready';
+  if (R.type === 'pubs' && R.step === 'prep') return startPub();
   else if ((R.type === 'pubs' && R.step === 'show') || (R.type === 'defis' && R.step === 'run')) return openVote();
   sync();
 }
@@ -734,7 +772,7 @@ function closeVote(forced) {
   else R.resultText = R.points ? 'Défi réussi !' : 'Défi raté…';
   addScore(team, R.points);
   R.step = 'result';
-  clearSecrets();
+  if (R.type === 'defis') clearSecrets();
   play(R.points ? 'good' : 'bad');
   sync();
 }
@@ -752,12 +790,19 @@ function nextPerformer() {
   const R = S.R;
   R.ti++;
   if (R.ti >= R.order.length) endRound();
+  else if (R.type === 'pubs') startPub();
   else startPerformer();
 }
 
+function giveSecret(team, target, payload) {
+  S.secrets[team] = { target, payload };
+  hostSend({ t: 'secret', team, target, payload });
+}
+
 function clearSecrets() {
-  const had = Object.keys(localSecrets).length;
-  for (const k of Object.keys(localSecrets)) delete localSecrets[k];
+  if (!S.secrets) S.secrets = {};
+  const had = Object.keys(S.secrets).length;
+  S.secrets = {};
   if (had) hostSend({ t: 'secret:clear' });
 }
 
@@ -822,6 +867,103 @@ function render() {
   else renderPlay();
   renderPanels();
   $('pause').classList.toggle('show', S.paused);
+  document.body.classList.toggle('has-remote', S.mode === 'net' && remoteCount > 0 && S.phase !== 'setup');
+  sendRemote();
+}
+
+// ---------- télécommande du présentateur ----------
+
+const REMOTE_ALWAYS = new Set(['pause', 'adj', 'm-skip', 'm-end', 'mute']);
+let lastRemote = '';
+
+// ce que le présentateur doit savoir et que l'écran ne montre pas encore
+function presenterSecret() {
+  const R = S.R;
+  if (S.phase !== 'play' || !R) return null;
+  if (R.type === 'selpoivre' && R.item) return { label: 'Réponse', text: R.item.sel ? '🧂 Sel (vrai)' : '🌶️ Poivre (faux)', more: R.item.why };
+  if (R.type === 'pubs') return { label: 'Produits', text: R.order.map((id, i) => `${teamById(id).name} : ${R.products[i]}`).join('\n') };
+  if (R.type === 'defis') return R.revealText ? { label: 'À faire deviner', text: R.revealText } : null;
+  if (R.type === 'menus' && R.step === 'pick') return null;
+  if (R.item && R.item.a) return { label: 'Réponse', text: R.item.a };
+  return null;
+}
+
+function remoteState() {
+  const R = S.R;
+  const type = roundType();
+  const buttons = [...document.querySelectorAll('#controls [data-act], #stage [data-act="menu-pick"]')].map((b) => ({
+    act: b.dataset.act,
+    label: b.textContent.trim().replace(/\s+/g, ' '),
+    kind: ['btn-primary', 'btn-good', 'btn-bad'].find((c) => b.classList.contains(c)) || 'btn-ghost',
+    disabled: b.disabled,
+    data: { ...b.dataset },
+  }));
+  let headline = '';
+  if (S.phase === 'lobby') headline = 'Salle d’attente : les équipes rejoignent la partie';
+  else if (S.phase === 'round-intro') headline = `${C.ROUNDS[type].title} : ${C.ROUNDS[type].rules}`;
+  else if (S.phase === 'podium') headline = `🏆 ${ranking()[0].name} gagne !`;
+  else if (R) {
+    if (R.step === 'twist') headline = `🌀 ${R.twist.title} — ${R.twist.text}`;
+    else if (R.item) headline = R.type === 'addition' ? R.item.words.join(' + ') : R.item.q;
+    else if (R.type === 'menus' && R.step === 'pick') headline = `${teamById(R.order[R.ti]).name} choisit son menu`;
+    else if (R.type === 'pubs') headline = R.step === 'brief' || R.step === 'prep' ? 'Fausses pubs : concertation' : `Pub de ${teamById(R.order[R.ti]).name} : ${R.product}`;
+    else if (R.type === 'defis') headline = `${teamById(R.order[R.ti]).name} : ${R.defiTitle}`;
+  }
+  let progress = '';
+  if (S.phase === 'play' && R) progress = R.items ? `Question ${Math.min(R.qi + 1, R.items.length)}/${R.items.length}` : R.order && !(R.type === 'pubs' && (R.step === 'brief' || R.step === 'prep')) ? `Équipe ${R.ti + 1}/${R.order.length}` : '';
+  const buzzed = R && R.winner && (R.step === 'answer' || R.step === 'reveal') ? teamById(R.winner).name : null;
+  return {
+    phase: S.phase,
+    code: S.code,
+    round: S.phase === 'play' || S.phase === 'round-intro' ? `Manche ${S.ri + 1} · ${C.ROUNDS[type].title}` : '',
+    progress,
+    headline,
+    buzzed,
+    secret: presenterSecret(),
+    twist: R?.twist && R.step !== 'twist' ? R.twist.title : null,
+    deadline: R?.deadline || 0,
+    paused: S.paused,
+    muted: isMuted(),
+    buttons,
+    teams: activeTeams().map((t) => ({ id: t.id, name: t.name, color: t.color, ink: t.ink, emoji: animalOf(t).emoji, score: t.score })),
+  };
+}
+
+function sendRemote() {
+  if (S.mode !== 'net' || !net || !S.code) return;
+  const state = remoteState();
+  const json = JSON.stringify(state);
+  if (json === lastRemote) return;
+  lastRemote = json;
+  net.send({ t: 'remote:state', state: { ...state, hostNow: Date.now() } });
+}
+
+function onRemoteAct(act, data) {
+  ensureAudio();
+  // on n'accepte que les boutons affichés en ce moment (évite les doubles appuis)
+  const shown = remoteState().buttons.some((b) => b.act === act && !b.disabled && (b.data.v ?? null) === (data.v ?? null) && (b.data.team ?? null) === (data.team ?? null));
+  if (!shown && !REMOTE_ALWAYS.has(act)) return;
+  if (act === 'adj' && !activeTeams().some((t) => t.id === data.team)) return;
+  if ((act === 'm-skip' || act === 'm-end') && S.phase !== 'play' && S.phase !== 'round-intro') return;
+  doAct(act, data, true);
+}
+
+function presenterUrl() {
+  return `${joinOrigin || location.origin}/remote.html?code=${S.code}&key=${encodeURIComponent(S.remoteKey || '')}`;
+}
+
+function showPresenter() {
+  const m = $('menu');
+  if (!S.code || !S.remoteKey) return toast('La salle n’est pas encore prête.');
+  const url = presenterUrl();
+  m.innerHTML = `<div class="menu-box presenter-box">
+    <h2>🎤 Télécommande du présentateur</h2>
+    <p class="hint">Réservé au présentateur : les joueurs détournent les yeux ! Il verra les réponses à l’avance.</p>
+    <img class="qr qr-small" src="/qr.svg?text=${encodeURIComponent(url)}" alt="QR code du présentateur">
+    <p class="hint">Une fois connecté, les boutons disparaissent de la télé : tout se pilote depuis son téléphone.</p>
+    ${btn('m-close', 'Fermer', 'btn-primary')}
+  </div>`;
+  m.classList.add('show');
 }
 
 function renderTop() {
@@ -836,7 +978,7 @@ function renderTop() {
   let progress = '';
   if (S.phase === 'play' && R) {
     if (R.items) progress = `Question ${Math.min(R.qi + 1, R.items.length)}/${R.items.length}`;
-    else if (R.order) progress = `Équipe ${R.ti + 1}/${R.order.length}`;
+    else if (R.order && !(R.type === 'pubs' && (R.step === 'brief' || R.step === 'prep'))) progress = `Équipe ${R.ti + 1}/${R.order.length}`;
   }
   const dot = S.mode === 'net' ? `<span class="net-dot net-${connStatus}" title="Connexion au serveur"></span>` : '';
   el.innerHTML = `<div class="logo">🍔 <span class="logo-short">BQ</span></div>
@@ -860,7 +1002,8 @@ function renderScores() {
   el.innerHTML = activeTeams()
     .map((t) => {
       const a = animalOf(t);
-      const hot = R && (R.winner === t.id || (R.order && R.order[R.ti] === t.id && S.phase === 'play'));
+      const groupStep = R && R.type === 'pubs' && (R.step === 'brief' || R.step === 'prep');
+      const hot = R && (R.winner === t.id || (R.order && R.order[R.ti] === t.id && S.phase === 'play' && !groupStep));
       const out = R && R.excluded && R.excluded.includes(t.id);
       const n = deviceCounts[t.id] || 0;
       return `<div class="score-card ${hot ? 'hot' : ''} ${out ? 'out' : ''} ${now - (bumped[t.id] || 0) < 1500 ? 'bump' : ''}" style="--team:${t.color};--ink:${t.ink}">
@@ -890,7 +1033,7 @@ function renderPanels() {
       teams: activeTeams(),
       view: viewFor(t.id),
       buzz: buzzState,
-      secret: localSecrets[t.id] || null,
+      secret: S.secrets?.[t.id]?.payload || null,
       compact: true,
       onBuzz: (qid) => hostSend({ t: 'act', team: t.id, kind: 'buzz', qid }),
       onAction: (qid, value) => hostSend({ t: 'act', team: t.id, kind: 'action', qid, value }),
@@ -1001,7 +1144,7 @@ function renderLobby() {
         <p class="hint">Plusieurs téléphones par équipe ? Pas de souci, ils buzzent tous pour leur équipe.</p>
       </div>
     </div>`,
-    `${btn('test-sounds', '🔊 Tester les cris', 'btn-ghost')} ${btn('begin', 'Lancer la partie !', 'btn-primary btn-big')}`,
+    `${btn('m-presenter', remoteCount ? '🎤 Présentateur connecté' : '🎤 Présentateur', 'btn-ghost')} ${btn('test-sounds', '🔊 Tester les cris', 'btn-ghost')} ${btn('begin', 'Lancer la partie !', 'btn-primary btn-big')}`,
   );
 }
 
@@ -1143,7 +1286,23 @@ function renderMenus(R) {
   stage(`${twistBanner(R)}${head}<div class="menu-theme">Menu « ${esc(theme)} » <span class="dots">${dots}</span></div>${questionBody(R)}${status}`, `${controls}<div class="laughs">${laughButtons(R)}</div>`);
 }
 
+function renderPubsPrep(R) {
+  const chips = R.order.map((id) => { const o = teamById(id); return `<span class="lock done" style="--team:${o.color};--ink:${o.ink}">${animalOf(o).emoji} ${esc(o.name)} 🤫</span>`; }).join('');
+  const where = S.mode === 'local' ? 'dans son panneau, en bas de l’écran (ouvrez-le chacun votre tour)' : 'sur son téléphone';
+  if (R.step === 'brief') {
+    return stage(
+      `<div class="menu-theme">Fausses pubs</div><div class="product">Chaque équipe a reçu son produit</div><div class="rules">Il est ${where}. Gardez-le secret : vous le jouerez devant tout le monde !</div><div class="locks">${chips}</div>`,
+      btn('pub-prep', 'Lancer la concertation (30 s)', 'btn-primary btn-big'),
+    );
+  }
+  return stage(
+    `<div class="menu-theme">Fausses pubs</div><div class="product">Concertation !</div><div class="rules">Toutes les équipes préparent leur pub en même temps.</div><div class="locks">${chips}</div><div class="big-timer" data-deadline="${R.deadline}"></div>`,
+    btn('pub-ready', 'Tout le monde est prêt !', 'btn-ghost'),
+  );
+}
+
 function renderPerform(R) {
+  if (R.type === 'pubs' && (R.step === 'brief' || R.step === 'prep')) return renderPubsPrep(R);
   const t = teamById(R.order[R.ti]);
   const head = `<div class="perf-team" style="--team:${t.color};--ink:${t.ink}">${animalOf(t).emoji} ${esc(t.name)}</div>`;
   const timer = R.deadline ? `<div class="big-timer" data-deadline="${R.deadline}"></div>` : '';
@@ -1151,8 +1310,6 @@ function renderPerform(R) {
   let controls = '';
   if (R.type === 'pubs') {
     body = `<div class="menu-theme">Fausse pub</div><div class="product">${esc(R.product)}</div>`;
-    if (R.step === 'draw') controls = btn('pub-prep', 'Lancer la concertation (30 s)', 'btn-primary btn-big');
-    if (R.step === 'prep') body += `<div class="status">Concertation…</div>`, (controls = btn('pub-ready', 'On est prêts !', 'btn-ghost'));
     if (R.step === 'ready') body += `<div class="status">Prêts ?</div>`, (controls = btn('pub-show', 'Action ! (45 s)', 'btn-primary btn-big'));
     if (R.step === 'show') body += `<div class="status status-open">🎬 Action !</div>`, (controls = btn('end-perf', 'Fin de la pub', 'btn-ghost'));
   } else {
@@ -1200,6 +1357,7 @@ function openMenu() {
     <h2>Menu</h2>
     ${btn('m-adjust', S.adjust ? 'Masquer la correction des scores' : 'Corriger les scores (±1)')}
     ${S.mode === 'net' ? btn('m-panels', S.showPanels ? 'Masquer les commandes à l’écran' : 'Commandes à l’écran (téléphone en panne)') : ''}
+    ${S.mode === 'net' && S.code ? btn('m-presenter', '🎤 Télécommande du présentateur') : ''}
     ${S.phase === 'play' || S.phase === 'round-intro' ? btn('m-skip', 'Passer à la manche suivante') : ''}
     ${btn('m-end', 'Terminer la partie', 'btn-bad')}
     ${btn('m-close', 'Fermer', 'btn-primary')}
@@ -1221,20 +1379,24 @@ document.addEventListener('click', (e) => {
   ensureAudio();
   const el = e.target.closest('[data-act]');
   if (!el || el.disabled) return;
-  const act = el.dataset.act;
+  doAct(el.dataset.act, el.dataset, false);
+});
+
+// une action, venant d'un clic sur l'écran ou de la télécommande du présentateur
+function doAct(act, d, fromRemote) {
   const R = S.R;
   switch (act) {
     // réglages
     case 'mode':
-      S.mode = el.dataset.v;
+      S.mode = d.v;
       return render();
     case 'nteams':
-      S.settings.nTeams = Number(el.dataset.v);
+      S.settings.nTeams = Number(d.v);
       fixAnimals();
       return render();
     case 'animal': {
-      const t = S.teams[Number(el.dataset.team)];
-      t.animal = el.dataset.animal;
+      const t = S.teams[Number(d.team)];
+      t.animal = d.animal;
       play(t.animal);
       return render();
     }
@@ -1281,10 +1443,10 @@ document.addEventListener('click', (e) => {
     case 'next':
       return nextItem();
     case 'laugh':
-      return laugh(el.dataset.team);
+      return laugh(d.team);
     // menus
     case 'menu-pick':
-      return onAction(R.order[R.ti], R.qid, el.dataset.v);
+      return onAction(R.order[R.ti], R.qid, d.v);
     case 'menu-right':
       return judgeMenu(true);
     case 'menu-wrong':
@@ -1297,9 +1459,7 @@ document.addEventListener('click', (e) => {
     case 'pub-prep':
       return startTimer('prep', 30);
     case 'pub-ready':
-      R.deadline = 0;
-      R.step = 'ready';
-      return sync();
+      return startPub();
     case 'pub-show':
       return startTimer('show', 45);
     case 'defi-run':
@@ -1321,7 +1481,7 @@ document.addEventListener('click', (e) => {
       S.phase = 'setup';
       return startGame();
     case 'new-game':
-      if (!confirm('Revenir à l’écran de création ?')) return;
+      if (!fromRemote && !confirm('Revenir à l’écran de création ?')) return;
       return newGame();
     // barre du haut et menu
     case 'mute':
@@ -1332,7 +1492,7 @@ document.addEventListener('click', (e) => {
     case 'menu':
       return openMenu();
     case 'adj':
-      addScore(el.dataset.team, Number(el.dataset.d));
+      addScore(d.team, Number(d.d));
       return sync();
     case 'm-adjust':
       S.adjust = !S.adjust;
@@ -1354,8 +1514,10 @@ document.addEventListener('click', (e) => {
       return endRound();
     case 'm-close':
       return $('menu').classList.remove('show');
+    case 'm-presenter':
+      return showPresenter();
   }
-});
+}
 
 // chaque équipe active garde un cri différent
 function fixAnimals() {
@@ -1367,7 +1529,7 @@ function fixAnimals() {
 }
 
 function newGame() {
-  const keep = { settings: S.settings, teams: S.teams, mode: S.mode, code: S.code, hostToken: S.hostToken };
+  const keep = { settings: S.settings, teams: S.teams, mode: S.mode, code: S.code, hostToken: S.hostToken, remoteKey: S.remoteKey };
   S = { ...freshState(), ...keep };
   S.teams.forEach((t) => (t.score = 0));
   clearSecrets();
