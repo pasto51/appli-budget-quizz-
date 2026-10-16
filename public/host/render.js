@@ -67,6 +67,7 @@ export function render() {
   else if (S.phase === 'podium') renderPodium();
   else renderPlay();
   renderPanels();
+  fitStage(); // les panneaux du mode tablette changent la place disponible
   $('pause').classList.toggle('show', S.paused);
   document.body.classList.toggle('has-remote', S.mode === 'net' && S.settings.presenter && rt.remoteCount > 0 && S.phase !== 'setup');
   sendRemote();
@@ -173,7 +174,22 @@ export function stage(html, controls = '') {
     $('controls').innerHTML = controls;
     $('controls').dataset.html = controls;
   }
+  fitStage();
 }
+
+// Filet de sécurité pour les petits écrans : si le contenu dépasse la hauteur
+// disponible (télé en 720p, ordinateur portable, panneaux du mode tablette),
+// on le réduit juste assez pour qu'il tienne en entier, sans barre de défilement.
+export function fitStage() {
+  const el = $('stage');
+  const wrap = el.parentElement;
+  el.style.zoom = '';
+  if (S.phase === 'setup') return; // l'écran de réglages défile normalement
+  const avail = wrap.clientHeight - 32; // marge intérieure de .stage-wrap
+  const need = el.offsetHeight;
+  if (need > avail && avail > 0) el.style.zoom = String(Math.max(0.5, avail / need));
+}
+addEventListener('resize', () => fitStage());
 
 export const btn = (act, label, cls = '', extra = '') => `<button class="btn ${cls}" data-act="${act}" ${extra}>${label}</button>`;
 

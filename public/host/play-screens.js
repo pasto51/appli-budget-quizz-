@@ -79,7 +79,7 @@ function renderBuzzRound(R) {
     controls = (R.twist?.id === 'dernier' ? btn('close-buzz', 'Clore les buzz', 'btn-ghost') + ' ' : '') + btn('nobody', 'Personne ne sait', 'btn-ghost');
   } else if (R.step === 'answer') {
     const t = teamById(R.winner);
-    status = `<div class="buzzed" style="--team:${t.color};--ink:${t.ink}"><span class="buzzed-emoji">${animalOf(t).emoji}</span>${esc(t.name)}</div>${timeUpOrTimer(R)}`;
+    status = `<div class="hero-row"><div class="buzzed" style="--team:${t.color};--ink:${t.ink}"><span class="buzzed-emoji">${animalOf(t).emoji}</span>${esc(t.name)}</div>${timeUpOrTimer(R)}</div>`;
     controls = `<span class="ctl-label">Leur réponse est…</span> ${btn('right', '✔ Juste', 'btn-good btn-big')} ${btn('wrong', '✘ Fausse', 'btn-bad btn-big')}`;
   } else if (R.step === 'reveal') {
     const who = R.lastOk && R.winner ? `<div class="verdict good">${esc(teamById(R.winner).name)} marque +${R.lastGain} !</div>` : R.lastOk === false ? '<div class="verdict bad">Raté !</div>' : '';
@@ -97,8 +97,8 @@ function renderSelPoivre(R) {
     status = '<div class="status">Lisez bien…</div>';
     controls = btn('open-now', 'Passer au choix', 'btn-ghost');
   } else if (R.step === 'choose' || R.step === 'locked') {
-    status = `<div class="sp-legend"><span class="sel">🧂 Sel = vrai</span><span class="poivre">🌶️ Poivre = faux</span></div>
-      ${R.deadline ? `<div class="big-timer" data-deadline="${R.deadline}"></div>` : ''}
+    status = `<div class="hero-row"><div class="sp-legend"><span class="sel">🧂 Sel = vrai</span><span class="poivre">🌶️ Poivre = faux</span></div>
+      ${R.deadline ? `<div class="big-timer" data-deadline="${R.deadline}"></div>` : ''}</div>
       <div class="locks">${teams.map((t) => `<span class="lock ${R.choices[t.id] ? 'done' : ''}" style="--team:${t.color};--ink:${t.ink}">${esc(t.name)} ${R.choices[t.id] ? '🔒' : '…'}</span>`).join('')}</div>`;
     controls = btn('reveal', 'Révéler maintenant', 'btn-ghost');
   } else if (R.step === 'reveal') {
@@ -154,7 +154,7 @@ function renderPubsPrep(R) {
     );
   }
   return stage(
-    `<div class="menu-theme">Fausses pubs</div><div class="product">Concertation !</div><div class="rules">Toutes les équipes préparent leur pub en même temps.</div><div class="locks">${chips}</div><div class="big-timer" data-deadline="${R.deadline}"></div>`,
+    `<div class="menu-theme">Fausses pubs</div><div class="hero-row"><div class="product">Concertation !</div><div class="big-timer" data-deadline="${R.deadline}"></div></div><div class="rules">Toutes les équipes préparent leur pub en même temps.</div><div class="locks">${chips}</div>`,
     btn('pub-ready', 'Tout le monde est prêt !', 'btn-ghost'),
   );
 }
@@ -189,5 +189,5 @@ function renderPerform(R) {
     body += `<div class="answer">${R.points ? `+${R.points}` : '0'}<small>${esc(R.resultText)}</small></div>`;
     controls = (R.type === 'pubs' && activeTeams().length === 2 ? btn('bonus-laugh', '😂 +1 fou rire', 'btn-ghost', R.bonus ? 'disabled' : '') + ' ' : '') + btn('next-perf', R.ti + 1 >= R.order.length ? 'Fin de la manche' : 'Équipe suivante', 'btn-primary btn-big');
   }
-  stage(`${head}${body}${timer}`, controls);
+  stage(`<div class="hero-row">${head}${timer}</div>${body}`, controls);
 }
