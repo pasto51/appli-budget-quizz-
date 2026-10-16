@@ -45,7 +45,8 @@ Sécurité :
 | Réglage | Choix |
 |---|---|
 | Durée de la partie | **Rapide** (~25 min à 3 équipes), **Court**, **Long** (la soirée complète, ~1 h). Change le nombre de questions par manche, de questions par menu, et le nombre d'équipes qui passent aux fausses pubs et aux défis (les autres votent). L'écran affiche une estimation. |
-| Chrono de réponse | Sans, 5, 10, 15 ou 20 s après un buzz (et pour les Menus). Temps écoulé = réponse fausse. |
+| Mauvaise réponse (Nuggets, L'Addition) | La main passe aux autres équipes (un essai chacune), l'équipe perd 1 point, les deux, ou rien. Pour éviter les buzz au hasard. Le Burger de la mort garde sa règle : −1 et la main passe. |
+| Chrono de réponse | Sans, 5, 10, 15 ou 20 s après un buzz (et pour les Menus). À la fin : « Temps écoulé ! », et c'est l'animateur (ou la personne devant l'écran) qui clique Juste ou Fausse. |
 | Suspense | Roulement de tambour avant les révélations (Sel ou Poivre, votes), annonce « X prend la tête ! », classement dévoilé avant la dernière manche. |
 | Coup de pouce | Règle bizarre qui tombe de temps en temps : la ou les équipes dernières marquent double sur la question. |
 | Règles bizarres | Jamais, 1 question sur 5, 1 sur 3. |
@@ -98,18 +99,18 @@ Variables facultatives : `ELEVENLABS_VOICE_ID` (voix par défaut), `ELEVENLABS_M
 - chaque phrase n'est générée qu'une fois puis gardée en cache (jusqu'au prochain redémarrage du serveur) ;
 - une partie Long consomme de l'ordre de 5 000 à 8 000 caractères en qualité « économique » (le modèle Flash coûte deux fois moins de crédits par caractère).
 
-## Comment ça marche
+## Pour les développeurs
 
-- `server.js` sert les pages et relaie l'écran et les téléphones en temps réel (WebSocket). Les salles vivent en mémoire, sans compte ni base de données.
-- `public/shared/hub.js` arbitre les buzz : le serveur horodate chaque buzz, **compense la latence** mesurée de chaque téléphone et attend 150 ms pour départager des buzz quasi simultanés. Le même code tourne dans le navigateur en mode tablette unique.
-- `public/host.js` est le chef d'orchestre : il connaît l'état du jeu et décide de ce qu'affiche chaque téléphone.
-- `public/play.js` est l'app téléphone (installable sur l'écran d'accueil).
-- `public/remote.js` est la télécommande du présentateur, protégée par une clé secrète contenue dans son QR code.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) : comment le jeu est construit (écran, serveur, téléphones, buzzer, messages, sécurité).
+- [docs/GUIDE-DE-REPRISE.md](docs/GUIDE-DE-REPRISE.md) : installer, tester, ajouter des questions / une règle bizarre / une manche, déployer, dépanner.
 
-Pour héberger le jeu sur Internet plutôt que sur le Wi-Fi de la maison, n'importe quel hébergeur Node.js avec WebSocket convient (Render, Fly.io, Railway…) : la commande de démarrage est `npm start` et le port est lu dans `PORT`.
+En bref : `server.js` relaie l'écran et les téléphones en temps réel (WebSocket) ; `public/host/` est l'écran de jeu, qui connaît les règles et décide de ce qu'affiche chaque téléphone ; `public/play.js` est l'app téléphone ; `public/remote.js` la télécommande ; les questions sont dans `public/shared/bank/`.
 
 ## Tests
 
 ```bash
-npm test
+npm test             # buzzer et banque de contenu (1 s)
+npm run test:e2e     # 10 vraies parties dans un navigateur (2-3 min, Playwright)
 ```
+
+Ils tournent aussi sur GitHub à chaque envoi.
