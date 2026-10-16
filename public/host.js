@@ -88,21 +88,42 @@ function shuffle(a) {
   return a;
 }
 
-// tire n éléments en privilégiant ceux qui ne sont pas sortis lors des dernières soirées
-function pickFresh(bank, size, n) {
-  const seen = store.get(SEEN_KEY) || {};
-  let list = seen[bank] || [];
-  const all = [...Array(size).keys()];
-  let fresh = shuffle(all.filter((i) => !list.includes(i)));
-  if (fresh.length < n) {
-    list = [];
-    fresh = [...fresh, ...shuffle(all.filter((i) => !fresh.includes(i)))];
+// Mémoire des contenus déjà joués, d'une partie à l'autre (sur cet écran).
+// On retient le texte de chaque question, pas sa position : ajouter des
+// questions à la banque ne mélange rien.
+const keyOf = (x) => (typeof x === 'string' ? x : x.q || (x.words && x.words.join('+')) || x.theme || x.line || x.cat || JSON.stringify(x));
+
+// indices de la liste, ceux jamais joués d'abord (dans un ordre aléatoire)
+function orderFresh(bank, list) {
+  const seen = new Set((store.get(SEEN_KEY) || {})[bank] || []);
+  const idx = shuffle([...list.keys()]);
+  return [...idx.filter((i) => !seen.has(keyOf(list[i]))), ...idx.filter((i) => seen.has(keyOf(list[i])))];
+}
+
+function markSeen(bank, items) {
+  const all = store.get(SEEN_KEY) || {};
+  const seen = new Set(all[bank] || []);
+  for (const it of items) seen.add(keyOf(it));
+  all[bank] = [...seen];
+  store.set(SEEN_KEY, all);
+}
+
+// tire n éléments jamais joués ; quand toute la banque y est passée, un nouveau cycle commence
+function pickFresh(bank, list, n) {
+  const seen = new Set((store.get(SEEN_KEY) || {})[bank] || []);
+  const unseen = list.filter((x) => !seen.has(keyOf(x))).length;
+  const chosen = orderFresh(bank, list).slice(0, n).map((i) => list[i]);
+  if (unseen < n) {
+    const all = store.get(SEEN_KEY) || {};
+    delete all[bank];
+    store.set(SEEN_KEY, all);
   }
-  const chosen = fresh.slice(0, n);
-  seen[bank] = [...list, ...chosen];
-  store.set(SEEN_KEY, seen);
+  markSeen(bank, chosen);
   return chosen;
 }
+
+// tirage pour les défis : un élément jamais tiré de la liste « nom »
+const pickDefi = (name, list) => pickFresh(`defi:${name}`, list, 1)[0];
 
 // ---------- transport (réseau ou tablette unique) ----------
 
@@ -340,16 +361,16 @@ function startRound() {
   const order = activeTeams().map((t) => t.id);
   switch (type) {
     case 'nuggets':
-      S.R = { type, items: pickFresh('nuggets', C.NUGGETS.length, Math.min(C.ROUNDS.nuggets.count, C.NUGGETS.length)).map((i) => C.NUGGETS[i]), qi: 0 };
+      S.R = { type, items: pickFresh('nuggets', C.NUGGETS, C.ROUNDS.nuggets.count), qi: 0 };
       break;
     case 'addition':
-      S.R = { type, items: pickFresh('addition', C.ADDITIONS.length, Math.min(C.ROUNDS.addition.count, C.ADDITIONS.length)).map((i) => C.ADDITIONS[i]), qi: 0 };
+      S.R = { type, items: pickFresh('addition', C.ADDITIONS, C.ROUNDS.addition.count), qi: 0 };
       break;
     case 'burger':
-      S.R = { type, items: pickFresh('burger', C.BURGERS.length, Math.min(C.ROUNDS.burger.count, C.BURGERS.length)).map((i) => C.BURGERS[i]), qi: 0 };
+      S.R = { type, items: pickFresh('burger', C.BURGERS, C.ROUNDS.burger.count), qi: 0 };
       break;
     case 'selpoivre':
-      S.R = { type, items: pickFresh('selpoivre', C.SEL_POIVRE.length, Math.min(C.ROUNDS.selpoivre.count, C.SEL_POIVRE.length)).map((i) => C.SEL_POIVRE[i]), qi: 0 };
+      S.R = { type, items: pickFresh('selpoivre', C.SEL_POIVRE, C.ROUNDS.selpoivre.count), qi: 0 };
       break;
     case 'menus': {
       // la moins bien classée commence ; égalité tirée au sort
@@ -358,10 +379,10 @@ function startRound() {
       return startMenuTeam();
     }
     case 'pubs':
-      S.R = { type, order, ti: 0, products: pickFresh('pubs', C.PRODUCTS.length, order.length).map((i) => C.PRODUCTS[i]) };
+      S.R = { type, order, ti: 0, products: pickFresh('pubs', C.PRODUCTS, order.length) };
       return startPubs();
     case 'defis':
-      S.R = { type, order, ti: 0, defis: pickFresh('defis', C.DEFIS.length, order.length) };
+      S.R = { type, order, ti: 0, defis: pickFresh('defis', C.DEFIS.map((d) => d.id), order.length) };
       return startPerformer();
   }
   startItem();
@@ -583,10 +604,9 @@ function onAction(teamId, qid, value) {
 
 function startMenuTeam() {
   const R = S.R;
-  const all = C.MENUS.map((_, i) => i);
-  const free = all.filter((i) => !R.usedThemes.includes(i));
-  // avec beaucoup d'équipes, les thèmes déjà joués reviennent en complément
-  R.offered = [...shuffle(free), ...shuffle(all.filter((i) => !free.includes(i)))].slice(0, 3);
+  // thèmes jamais joués d'abord (même lors des soirées précédentes), puis les autres
+  const order = orderFresh('menus', C.MENUS);
+  R.offered = [...order.filter((i) => !R.usedThemes.includes(i)), ...order.filter((i) => R.usedThemes.includes(i))].slice(0, 3);
   R.step = 'pick';
   R.qid = newQid();
   R.twist = null;
@@ -599,6 +619,7 @@ function chooseMenu(i) {
   const R = S.R;
   R.theme = i;
   R.usedThemes.push(i);
+  markSeen('menus', [C.MENUS[i]]);
   R.qi = 0;
   R.correct = 0;
   play('pop');
@@ -679,8 +700,9 @@ function startPerformer() {
     R.product = R.products[R.ti] || C.PRODUCTS[Math.floor(Math.random() * C.PRODUCTS.length)];
     say('pubs:produit', `${teamById(team).name}, votre produit : ${R.product}`);
   } else {
-    const d = C.DEFIS[R.defis[R.ti] ?? Math.floor(Math.random() * C.DEFIS.length)];
-    const made = d.make();
+    // plus d'équipes que de défis : on reprend un défi au hasard, avec un contenu différent
+    const d = C.DEFIS.find((x) => x.id === R.defis[R.ti]) || C.DEFIS[Math.floor(Math.random() * C.DEFIS.length)];
+    const made = d.make(pickDefi);
     R.defi = { id: d.id, secret: d.secret };
     R.defiTitle = d.title;
     R.defiRules = d.rules;
