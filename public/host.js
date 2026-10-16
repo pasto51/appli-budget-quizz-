@@ -912,6 +912,31 @@ function presenterSecret() {
   return null;
 }
 
+// ce qu'on peut gagner sur la question en cours, comme la pastille de l'écran
+function pointsAtStake() {
+  const R = S.R;
+  if (S.phase !== 'play' || !R || R.step === 'twist') return null;
+  const m = mult();
+  const x3 = m > 1 ? ' (×3)' : '';
+  switch (R.type) {
+    case 'nuggets':
+      return `+${m}${x3}`;
+    case 'addition':
+      return `+${2 * m}${x3}`;
+    case 'burger':
+      return `+${2 * m} / −${m}${x3}`;
+    case 'selpoivre':
+      return `+${m} par bonne réponse${x3}`;
+    case 'menus':
+      return R.step === 'pick' ? '+1 par question, +1 bonus si 3/3' : `+${m}${x3} · bonus +1 si 3/3`;
+    case 'pubs':
+      return R.step === 'brief' || R.step === 'prep' ? null : activeTeams().length === 2 ? '+2 si convaincus · +1 fou rire possible' : '+2 si majorité convaincue · +1 si égalité';
+    case 'defis':
+      return '+2 si réussi';
+  }
+  return null;
+}
+
 function remoteState() {
   const R = S.R;
   const type = roundType();
@@ -927,7 +952,7 @@ function remoteState() {
   else if (S.phase === 'round-intro') headline = `${C.ROUNDS[type].title} : ${C.ROUNDS[type].rules}`;
   else if (S.phase === 'podium') headline = `🏆 ${ranking()[0].name} gagne !`;
   else if (R) {
-    if (R.step === 'twist') headline = `🌀 ${R.twist.title} — ${R.twist.text}`;
+    if (R.step === 'twist') headline = '';
     else if (R.item) headline = R.type === 'addition' ? R.item.words.join(' + ') : R.item.q;
     else if (R.type === 'menus' && R.step === 'pick') headline = `${teamById(R.order[R.ti]).name} choisit son menu`;
     else if (R.type === 'pubs') headline = R.step === 'brief' || R.step === 'prep' ? 'Fausses pubs : concertation' : `Pub de ${teamById(R.order[R.ti]).name} : ${R.product}`;
@@ -944,7 +969,10 @@ function remoteState() {
     headline,
     buzzed,
     secret: presenterSecret(),
-    twist: R?.twist && R.step !== 'twist' ? R.twist.title : null,
+    // règle bizarre en entier, comme à l'écran (grande carte pendant l'annonce, rappel ensuite)
+    twist: R?.twist ? { title: R.twist.title, text: R.twist.text, announce: R.step === 'twist' } : null,
+    points: pointsAtStake(),
+    extras: [R?.stealInfo, R?.swapInfo, R?.type === 'menus' && R.step === 'summary' && R.correct === 3 ? 'Menu complet : +1 bonus !' : null, R?.bonus ? '😂 +1 fou rire accordé' : null].filter(Boolean),
     deadline: R?.deadline || 0,
     paused: S.paused,
     muted: isMuted(),

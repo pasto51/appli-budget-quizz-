@@ -56,7 +56,11 @@ function render() {
   }
   const s = state;
   const buttons = s.buttons
-    .map((b, i) => `<button class="btn ${b.kind} ${b.kind === 'btn-ghost' ? '' : 'btn-big'}" data-i="${i}" ${b.disabled ? 'disabled' : ''}>${esc(b.label)}</button>`)
+    .map((b, i) =>
+      b.act === 'menu-pick'
+        ? `<button class="menu-card r-menu" data-i="${i}" ${b.disabled ? 'disabled' : ''}>🍔<span>${esc(b.label.replace(/^🍔\s*/, ''))}</span></button>`
+        : `<button class="btn ${b.kind} ${b.kind === 'btn-ghost' ? '' : 'btn-big'}" data-i="${i}" ${b.disabled ? 'disabled' : ''}>${esc(b.label)}</button>`,
+    )
     .join('');
   const teams = s.teams
     .map(
@@ -66,8 +70,10 @@ function render() {
     .join('');
   $main.innerHTML = `
     <div class="r-round">${esc(s.round)} ${s.progress ? `<span>${esc(s.progress)}</span>` : ''}</div>
-    ${s.twist ? `<div class="ctl-banner">🌀 ${esc(s.twist)}</div>` : ''}
-    <div class="r-headline">${esc(s.headline)}</div>
+    ${s.twist ? `<div class="r-twist ${s.twist.announce ? 'announce' : ''}"><small>🌀 Règle bizarre${s.twist.announce ? ' : à annoncer !' : ' en cours'}</small><b>${esc(s.twist.title)}</b><span>${esc(s.twist.text)}</span></div>` : ''}
+    ${s.points ? `<div class="r-points">${esc(s.points)}</div>` : ''}
+    ${s.headline ? `<div class="r-headline">${esc(s.headline)}</div>` : ''}
+    ${(s.extras || []).map((x) => `<div class="r-extra">${esc(x)}</div>`).join('')}
     ${s.buzzed ? `<div class="r-buzzed">🔔 ${esc(s.buzzed)} a buzzé</div>` : ''}
     ${s.secret ? `<div class="r-secret"><small>${esc(s.secret.label)} (secret)</small><div>${esc(s.secret.text).replace(/\n/g, '<br>')}</div>${s.secret.more ? `<p>${esc(s.secret.more)}</p>` : ''}</div>` : ''}
     ${deadline ? `<div class="ctl-timer" data-deadline="${deadline}"></div>` : ''}
