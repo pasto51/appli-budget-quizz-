@@ -1407,8 +1407,7 @@ function renderSetup() {
 
 function voiceCard(st) {
   if (!voiceInfo.loaded) return '';
-  if (!voiceInfo.available)
-    return `<div class="card"><h2>🎙️ Voix de l’animateur</h2><p class="hint">Pas encore disponible : la clé ElevenLabs n’est pas configurée sur le serveur (voir le README).</p></div>`;
+  if (!voiceInfo.available) return ''; // pas de clé ElevenLabs sur le serveur : rien à proposer
   const opts = voiceInfo.voices
     .map((v) => {
       const lab = [v.labels.gender, v.labels.accent, v.labels.language].filter(Boolean).join(', ');
