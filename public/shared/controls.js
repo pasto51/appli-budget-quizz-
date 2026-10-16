@@ -45,7 +45,8 @@ export function renderControls(el, p) {
     html += `<button class="buzzer buzzer-${st}" data-buzz="${esc(view.qid)}" ${st === 'armed' ? '' : 'disabled'} style="--team:${team.color};--ink:${team.ink || '#fff'}">
       <span class="buzzer-label">${esc(label || '···')}</span>
     </button>
-    <div class="ctl-sub">${esc(winnerTeam ? `${winnerTeam.name} a été plus rapide` : sub)}</div>`;
+    <div class="ctl-sub">${esc(winnerTeam ? `${winnerTeam.name} a été plus rapide` : sub)}</div>
+    ${view.deadline ? `<div class="ctl-timer" data-deadline="${view.deadline}"></div>` : ''}`;
   } else if (view.screen === 'choice') {
     const chosen = view.chosen;
     html += `<div class="ctl-prompt">${esc(view.prompt || '')}</div>`;

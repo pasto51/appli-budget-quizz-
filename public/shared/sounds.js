@@ -287,6 +287,21 @@ const SFX = {
       voice({ type: 'square', at, dur: d, freq: f / 2, filter: { type: 'lowpass', freq: 1200 }, gain: 0.12 });
     });
   },
+  drumroll() {
+    // roulement de tambour qui accélère, puis coup de cymbale
+    let t = 0;
+    for (let i = 0; i < 34; i++) {
+      const gap = 0.075 - i * 0.0016;
+      noise({ at: t, dur: 0.07, filter: { type: 'bandpass', freq: 180 + i * 4, q: 0.8 }, gain: 0.25 + i * 0.012 });
+      t += Math.max(0.022, gap);
+    }
+    noise({ at: t + 0.02, dur: 0.9, filter: { type: 'highpass', freq: 4500, q: 0.5 }, gain: 0.35 });
+    voice({ type: 'sine', at: t + 0.02, dur: 0.4, freq: [[0, 120], [0.4, 60]], gain: 0.5 });
+  },
+  lead() {
+    // petite montée triomphante
+    [523, 659, 784, 1047, 1319].forEach((f, i) => voice({ type: 'square', at: i * 0.07, dur: i === 4 ? 0.45 : 0.1, freq: f, filter: { type: 'lowpass', freq: 3000 }, gain: 0.18 }));
+  },
   pop() {
     voice({ type: 'sine', dur: 0.1, freq: [[0, 900], [0.1, 300]], gain: 0.35, attack: 0.003 });
   },

@@ -40,6 +40,18 @@ Dans la salle d'attente (ou plus tard via ☰), le bouton **🎤 Présentateur**
 
 Si l'écran est rechargé, la partie peut être **reprise** là où elle en était. Si un téléphone se met en veille, il retrouve sa place tout seul.
 
+## Réglages au lancement
+
+| Réglage | Choix |
+|---|---|
+| Durée de la partie | **Rapide** (~25 min à 3 équipes), **Court**, **Long** (la soirée complète, ~1 h). Change le nombre de questions par manche, de questions par menu, et le nombre d'équipes qui passent aux fausses pubs et aux défis (les autres votent). L'écran affiche une estimation. |
+| Chrono de réponse | Sans, 5, 10, 15 ou 20 s après un buzz (et pour les Menus). Temps écoulé = réponse fausse. |
+| Suspense | Roulement de tambour avant les révélations (Sel ou Poivre, votes), annonce « X prend la tête ! », classement dévoilé avant la dernière manche. |
+| Coup de pouce | Règle bizarre qui tombe de temps en temps : la ou les équipes dernières marquent double sur la question. |
+| Règles bizarres | Jamais, 1 question sur 5, 1 sur 3. |
+
+Sur les téléphones, chaque équipe voit son score et son rang ; un « +2 » s'affiche et le téléphone vibre quand elle marque (ou perd des points).
+
 ## Les manches
 
 Nuggets, Sel ou Poivre, L'Addition, Les Menus, Fausses pubs, Défis et le Burger de la mort, avec les **règles bizarres** tirées au hasard (réglable : jamais, 1 question sur 5 ou sur 3). Chaque manche peut être désactivée au lancement.

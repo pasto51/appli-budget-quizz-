@@ -66,7 +66,7 @@ export const ROUNDS = {
   menus: {
     title: 'Les Menus',
     subtitle: 'Un thème, trois questions',
-    rules: 'L’équipe la moins bien classée choisit d’abord son menu. 3 questions : +1 par bonne réponse, +1 bonus si les trois sont justes.',
+    rules: 'L’équipe la moins bien classée choisit d’abord son menu. {n} questions : +1 par bonne réponse, +1 bonus si tout est juste.',
   },
   pubs: {
     title: 'Fausses pubs',
@@ -84,6 +84,14 @@ export const ROUNDS = {
     rules: 'Questions pièges ! Bonne réponse : +2. Mauvaise réponse : −1, et l’équipe ne peut plus buzzer sur cette question.',
     count: 5,
   },
+};
+
+// Durée de la partie : nombre de questions par manche, et nombre d'équipes qui
+// passent aux fausses pubs et aux défis (les autres votent).
+export const LENGTHS = {
+  rapide: { label: 'Rapide', hint: 'peu de questions', nuggets: 5, selpoivre: 4, addition: 3, burger: 3, menuQs: 2, performers: 2 },
+  court: { label: 'Court', hint: 'version allégée', nuggets: 8, selpoivre: 6, addition: 4, burger: 4, menuQs: 3, performers: 4 },
+  long: { label: 'Long', hint: 'la soirée complète', nuggets: 12, selpoivre: 8, addition: 5, burger: 5, menuQs: 3, performers: 99 },
 };
 
 export const ROUND_ORDER = ['nuggets', 'selpoivre', 'addition', 'menus', 'pubs', 'defis', 'burger'];
@@ -117,6 +125,8 @@ export const TWISTS = [
   { id: 'mains', title: 'Mains sur la tête', text: 'Tout le monde garde les mains sur la tête jusqu’au buzz. Buzzer d’abord, réfléchir après !', rounds: BUZZ },
   { id: 'vol', title: 'Vol de points', text: 'L’équipe qui répond bien vole 1 point à l’équipe en tête.', rounds: ORAL },
   { id: 'echange', title: 'Échange !', text: 'À la fin de cette question, deux équipes échangent leurs scores…', rounds: ALL_Q, rare: true },
+  // coup de pouce : seulement s'il y a une équipe en retard (voir host.js)
+  { id: 'pouce', title: 'Coup de pouce', text: '{last} : vos points comptent DOUBLE sur cette question !', rounds: ['nuggets', 'addition', 'burger', 'selpoivre'], catchup: true },
 ];
 
 // ---------- Banques de contenu (public/shared/bank/) ----------

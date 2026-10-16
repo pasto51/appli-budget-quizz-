@@ -10,6 +10,8 @@ const $foot = document.getElementById('foot');
 const $head = document.getElementById('head');
 const $teamName = document.getElementById('teamName');
 const $net = document.getElementById('net');
+const $me = document.getElementById('me');
+let lastScore = null;
 
 const store = {
   get(k) {
@@ -136,6 +138,27 @@ function teamObj() {
   return S.teams.find((t) => t.id === S.team);
 }
 
+// score et rang de l'équipe dans l'en-tête, avec un « +2 » qui saute quand on marque
+function renderMe(me) {
+  if (!me) {
+    $me.innerHTML = '';
+    lastScore = null;
+    return;
+  }
+  const rank = me.rank === 1 ? '1ʳᵉ' : `${me.rank}ᵉ`;
+  $me.innerHTML = `${me.boost ? '<span class="me-boost">×2</span>' : ''}<b>${me.score}</b> pt${Math.abs(me.score) > 1 ? 's' : ''} · ${rank}/${me.n}`;
+  if (lastScore != null && me.score !== lastScore) {
+    const d = me.score - lastScore;
+    const pop = document.createElement('div');
+    pop.className = `score-pop ${d > 0 ? 'up' : 'down'}`;
+    pop.textContent = d > 0 ? `+${d}` : `${d}`;
+    document.body.appendChild(pop);
+    setTimeout(() => pop.remove(), 1800);
+    if (navigator.vibrate) navigator.vibrate(d > 0 ? [60, 40, 60] : [250]);
+  }
+  lastScore = me.score;
+}
+
 function render() {
   const team = teamObj();
   document.body.style.setProperty('--team', team ? team.color : '#e2231a');
@@ -168,6 +191,7 @@ function render() {
   }
 
   if (!team) {
+    renderMe(null);
     $teamName.textContent = `Salle ${code}`;
     $main.innerHTML = `<div class="pick"><div class="ctl-title">Choisis ton équipe</div>
       ${S.teams.length ? '' : '<div class="ctl-text">L’écran prépare les équipes…</div>'}
@@ -191,6 +215,7 @@ function render() {
 
   const animal = ANIMALS.find((x) => x.id === team.animal);
   $teamName.innerHTML = `${animal ? animal.emoji : ''} ${esc(team.name)}`;
+  renderMe(S.view?.me);
   renderControls($main, {
     team,
     teams: S.teams,

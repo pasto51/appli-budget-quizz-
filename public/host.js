@@ -30,7 +30,7 @@ const store = {
 // ---------- état ----------
 
 function defaultSettings() {
-  return { nTeams: 3, twistRate: 0.2, selTimer: true, buzzDuringRead: false, rounds: [...C.ROUND_ORDER] };
+  return { nTeams: 3, length: 'long', twistRate: 0.2, selTimer: true, buzzDuringRead: false, answerTimer: 10, suspense: true, catchup: true, rounds: [...C.ROUND_ORDER] };
 }
 
 function freshState() {
@@ -76,6 +76,27 @@ let lastViews = {}; // teamId -> JSON envoyé
 let bumped = {}; // teamId -> horodatage du dernier changement de score
 
 const activeTeams = () => S.teams.slice(0, S.settings.nTeams);
+const len = () => C.LENGTHS[S.settings.length] || C.LENGTHS.long;
+const menuQs = () => S.R?.nq || len().menuQs;
+const roundRules = (type) => C.ROUNDS[type].rules.replace('{n}', String(menuQs()));
+
+// estimation grossière de la durée, en minutes, pour l'écran de réglages
+function estimateMinutes(st) {
+  const L = C.LENGTHS[st.length] || C.LENGTHS.long;
+  const n = st.nTeams;
+  const perf = Math.min(L.performers, n);
+  const secs = {
+    nuggets: L.nuggets * 40,
+    selpoivre: L.selpoivre * 35,
+    addition: L.addition * 45,
+    menus: n * (20 + L.menuQs * 30),
+    pubs: 60 + perf * 120,
+    defis: perf * 110,
+    burger: L.burger * 45,
+  };
+  const total = st.rounds.reduce((sum, r) => sum + secs[r] + 30, 60);
+  return Math.max(5, Math.round(total / 300) * 5);
+}
 const teamById = (id) => S.teams.find((t) => t.id === id);
 const animalOf = (t) => C.ANIMALS.find((a) => a.id === t.animal) || C.ANIMALS[0];
 const newQid = () => `${S.ri}.${++S.seq}`;
@@ -221,7 +242,7 @@ let buzzOpenKey = null;
 function sync() {
   if (S.phase !== 'setup') {
     for (const t of activeTeams()) {
-      const view = viewFor(t.id);
+      const view = { ...viewFor(t.id), me: S.phase === 'lobby' ? undefined : { score: t.score, rank: rankOf(t), n: activeTeams().length, boost: boosted(t.id) } };
       const json = JSON.stringify(view);
       if (lastViews[t.id] !== json) {
         lastViews[t.id] = json;
@@ -240,8 +261,35 @@ function sync() {
       hostSend({ t: 'buzz:close' });
     }
   }
+  checkLeader();
   store.set(SAVE_KEY, S);
   render();
+}
+
+// « Ketchup prend la tête ! » quand une équipe passe seule en tête (réglage « Suspense »)
+function checkLeader() {
+  if (S.phase !== 'play') return;
+  const top = Math.max(...activeTeams().map((t) => t.score));
+  const leaders = activeTeams().filter((t) => t.score === top);
+  if (leaders.length !== 1 || top <= 0) return;
+  const id = leaders[0].id;
+  if (S.leader === id) return;
+  S.leader = id;
+  if (S.settings.suspense) setTimeout(() => announce(`${animalOf(leaders[0]).emoji} ${leaders[0].name} prend la tête !`, leaders[0]), 900);
+}
+
+let announceTimer = null;
+function announce(text, team) {
+  const el = $('announce');
+  el.textContent = text;
+  el.style.setProperty('--team', team.color);
+  el.style.setProperty('--ink', team.ink);
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+  play('lead');
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
 function viewFor(teamId) {
@@ -251,7 +299,7 @@ function viewFor(teamId) {
   if (S.phase === 'lobby') return { screen: 'wait', title: `Bienvenue, ${team.name} !`, text: 'La partie va commencer. Regardez l’écran.' };
   if (S.phase === 'round-intro') {
     const info = C.ROUNDS[roundType()];
-    return { screen: 'wait', title: info.title, text: info.rules };
+    return { screen: 'wait', title: info.title, text: roundRules(roundType()) };
   }
   if (S.phase === 'podium') {
     const rank = rankOf(team);
@@ -261,13 +309,14 @@ function viewFor(teamId) {
 
   const banner = R.twist && R.step !== 'twist' ? `${R.twist.title} — ${R.twist.text}` : undefined;
   if (R.step === 'twist') return { screen: 'wait', title: `🌀 ${R.twist.title}`, text: R.twist.text };
+  if (R.step === 'suspense') return { screen: 'wait', title: '🥁 Suspense…', text: R.type === 'selpoivre' ? 'Et la réponse est…' : 'Le verdict tombe…' };
 
   switch (R.type) {
     case 'nuggets':
     case 'addition':
     case 'burger':
       if (R.step === 'reveal') return { screen: 'wait', title: 'Réponse', text: R.item.a };
-      return { screen: 'buzz', qid: R.qid, banner };
+      return { screen: 'buzz', qid: R.qid, banner, deadline: R.step === 'answer' && R.deadline ? R.deadline : undefined };
 
     case 'selpoivre':
       if (R.step === 'read') return { screen: 'wait', title: 'Lisez bien…', banner };
@@ -295,8 +344,8 @@ function viewFor(teamId) {
       const theme = C.MENUS[R.theme].theme;
       if (teamId === active) {
         if (R.step === 'reveal') return { screen: 'wait', title: R.lastOk ? 'Bonne réponse !' : 'Raté…', text: R.item.a };
-        if (R.step === 'summary') return { screen: 'wait', title: `Menu terminé : ${R.correct}/3`, text: R.correct === 3 ? 'Bonus : +1 point !' : '' };
-        return { screen: 'wait', title: theme, text: 'Répondez à voix haute', banner };
+        if (R.step === 'summary') return { screen: 'wait', title: `Menu terminé : ${R.correct}/${menuQs()}`, text: R.correct === menuQs() ? 'Bonus : +1 point !' : '' };
+        return { screen: 'wait', title: theme, text: 'Répondez à voix haute', banner, deadline: R.step === 'judge' && R.deadline ? R.deadline : undefined };
       }
       return { screen: 'wait', title: `Menu « ${theme} »`, text: `${activeName} répond`, banner };
     }
@@ -322,6 +371,7 @@ function viewFor(teamId) {
       }
       if (R.step === 'result') return { screen: 'wait', title: R.points > 0 ? `${activeName} : +${R.points}` : `${activeName} : 0 point`, text: R.resultText };
       if (R.type === 'pubs') {
+        if ((R.step === 'brief' || R.step === 'prep') && !R.order.includes(teamId)) return { screen: 'wait', title: 'Fausses pubs', text: 'Cette fois, vous ne jouez pas de pub : vous votez !' };
         if (R.step === 'brief') return { screen: 'wait', title: 'Fausses pubs', text: 'Votre produit est sur votre carte secrète. Ne le dites pas aux autres !' };
         if (R.step === 'prep') return { screen: 'wait', title: 'Concertation !', text: 'Préparez votre pub, toutes les équipes en même temps', deadline: R.deadline || undefined };
         if (teamId === active) return { screen: 'wait', title: R.step === 'show' ? 'Action ! Jouez votre pub' : 'À vous !', text: R.product, deadline: R.deadline || undefined };
@@ -340,6 +390,8 @@ function startGame() {
   for (const t of S.teams) t.score = 0;
   S.ri = 0;
   S.swapUsed = false;
+  S.leader = null;
+  S.performed = [];
   S.R = null;
   S.phase = S.mode === 'net' ? 'lobby' : 'round-intro';
   if (S.phase === 'round-intro') introRound();
@@ -354,7 +406,7 @@ function introRound() {
   clearSecrets();
   const type = roundType();
   play(type === 'burger' ? 'burger' : 'round');
-  say(`manche:${type}`, `${C.ROUNDS[type].title}. ${C.ROUNDS[type].rules}`);
+  say(`manche:${type}`, `${C.ROUNDS[type].title}. ${roundRules(type)}`);
 }
 
 function startRound() {
@@ -363,29 +415,33 @@ function startRound() {
   const order = activeTeams().map((t) => t.id);
   switch (type) {
     case 'nuggets':
-      S.R = { type, items: pickFresh('nuggets', C.NUGGETS, C.ROUNDS.nuggets.count), qi: 0 };
+      S.R = { type, items: pickFresh('nuggets', C.NUGGETS, len().nuggets), qi: 0 };
       break;
     case 'addition':
-      S.R = { type, items: pickFresh('addition', C.ADDITIONS, C.ROUNDS.addition.count), qi: 0 };
+      S.R = { type, items: pickFresh('addition', C.ADDITIONS, len().addition), qi: 0 };
       break;
     case 'burger':
-      S.R = { type, items: pickFresh('burger', C.BURGERS, C.ROUNDS.burger.count), qi: 0 };
+      S.R = { type, items: pickFresh('burger', C.BURGERS, len().burger), qi: 0 };
       break;
     case 'selpoivre':
-      S.R = { type, items: pickFresh('selpoivre', C.SEL_POIVRE, C.ROUNDS.selpoivre.count), qi: 0 };
+      S.R = { type, items: pickFresh('selpoivre', C.SEL_POIVRE, len().selpoivre), qi: 0 };
       break;
     case 'menus': {
       // la moins bien classée commence ; égalité tirée au sort
       const byScore = shuffle(activeTeams()).sort((a, b) => a.score - b.score).map((t) => t.id);
-      S.R = { type, order: byScore, ti: 0, usedThemes: [] };
+      S.R = { type, order: byScore, ti: 0, usedThemes: [], nq: len().menuQs };
       return startMenuTeam();
     }
-    case 'pubs':
-      S.R = { type, order, ti: 0, products: pickFresh('pubs', C.PRODUCTS, order.length) };
+    case 'pubs': {
+      const perf = pickPerformers();
+      S.R = { type, order: perf, ti: 0, products: pickFresh('pubs', C.PRODUCTS, perf.length) };
       return startPubs();
-    case 'defis':
-      S.R = { type, order, ti: 0, defis: pickFresh('defis', C.DEFIS.map((d) => d.id), order.length) };
+    }
+    case 'defis': {
+      const perf = pickPerformers();
+      S.R = { type, order: perf, ti: 0, defis: pickFresh('defis', C.DEFIS.map((d) => d.id), perf.length) };
       return startPerformer();
+    }
   }
   startItem();
 }
@@ -417,23 +473,51 @@ function rankOf(team) {
 
 function maybeTwist(type) {
   if (Math.random() >= S.settings.twistRate) return null;
-  const pool = C.TWISTS.filter((t) => t.rounds.includes(type) && !(t.id === 'echange' && (S.swapUsed || activeTeams().length < 2)));
+  const last = lastTeams();
+  const pool = C.TWISTS.filter(
+    (t) =>
+      t.rounds.includes(type) &&
+      !(t.id === 'echange' && (S.swapUsed || activeTeams().length < 2)) &&
+      !(t.catchup && (!S.settings.catchup || !last.length)),
+  );
   const weights = pool.map((t) => (t.rare ? 0.25 : 1));
   let r = Math.random() * weights.reduce((a, b) => a + b, 0);
   let tw = pool[pool.length - 1];
   for (let i = 0; i < pool.length; i++) if ((r -= weights[i]) < 0) { tw = pool[i]; break; }
   if (!tw) return null;
   const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
-  return { id: tw.id, title: tw.title, text: tw.text.replace('{accent}', pickOne(C.ACCENTS)).replace('{who}', pickOne(C.SPOKESPERSON)) };
+  const names = last.map((t) => t.name).join(' et ');
+  const tw2 = { id: tw.id, title: tw.title, text: tw.text.replace('{accent}', pickOne(C.ACCENTS)).replace('{who}', pickOne(C.SPOKESPERSON)).replace('{last}', names) };
+  if (tw.catchup) tw2.boost = last.map((t) => t.id);
+  return tw2;
 }
+
+// équipes dernières, seulement s'il y a un vrai retard (pas d'égalité générale)
+function lastTeams() {
+  const teams = activeTeams();
+  const min = Math.min(...teams.map((t) => t.score));
+  const max = Math.max(...teams.map((t) => t.score));
+  if (min === max) return [];
+  return teams.filter((t) => t.score === min);
+}
+
+const boosted = (teamId) => !!S.R?.twist?.boost?.includes(teamId);
 
 const mult = () => (S.R?.twist?.id === 'triple' ? 3 : 1);
 
-function addScore(teamId, delta) {
+// points réellement gagnés : doublés pour une équipe qui a le coup de pouce
+function effective(teamId, delta) {
+  return delta > 0 && boosted(teamId) ? delta * 2 : delta;
+}
+
+// raw : correction manuelle, jamais modifiée
+function addScore(teamId, delta, raw = false) {
   const t = teamById(teamId);
-  if (!t || !delta) return;
-  t.score += delta;
+  if (!t || !delta) return 0;
+  const d = raw ? delta : effective(teamId, delta);
+  t.score += d;
   bumped[teamId] = Date.now();
+  return d;
 }
 
 // « Vol de points » : 1 point pris à l'équipe en tête (si ce n'est pas l'équipe qui a répondu)
@@ -521,16 +605,20 @@ function onBuzz(teamId, qid) {
   buzzOpenKey = null; // le hub a déjà fermé le buzzer
   R.winner = teamId;
   R.step = 'answer';
+  R.deadline = answerDeadline();
   play(teamById(teamId).animal);
   sync();
 }
+
+const answerDeadline = () => (S.settings.answerTimer ? Date.now() + S.settings.answerTimer * 1000 : 0);
 
 function judgeBuzz(ok) {
   const R = S.R;
   const base = R.type === 'nuggets' ? 1 : 2;
   R.lastOk = ok;
+  R.deadline = 0;
   if (ok) {
-    addScore(R.winner, base * mult());
+    R.lastGain = addScore(R.winner, base * mult());
     applySteal(R.winner);
     play('good');
     reveal();
@@ -552,6 +640,26 @@ function judgeBuzz(ok) {
   }
   reveal();
 }
+
+// roulement de tambour avant une révélation (réglage « Suspense »)
+function startSuspense(next) {
+  const R = S.R;
+  if (!S.settings.suspense) return runSuspenseNext(next);
+  R.deadline = 0;
+  R.step = 'suspense';
+  R.suspenseUntil = Date.now() + 2200;
+  R.suspenseNext = next;
+  play('drumroll');
+  sync();
+}
+
+function runSuspenseNext(next) {
+  if (next.act === 'reveal') reveal();
+  else closeVote(next.forced);
+}
+
+const revealWithSuspense = () => startSuspense({ act: 'reveal' });
+const voteWithSuspense = (forced) => startSuspense({ act: 'vote', forced });
 
 function nobody() {
   S.R.lastOk = null;
@@ -586,7 +694,7 @@ function onAction(teamId, qid, value) {
   if (R.type === 'selpoivre' && R.step === 'choose' && !R.choices[teamId] && (value === 'sel' || value === 'poivre')) {
     R.choices[teamId] = value;
     play('pop');
-    if (activeTeams().every((t) => R.choices[t.id])) reveal();
+    if (activeTeams().every((t) => R.choices[t.id])) revealWithSuspense();
     else sync();
     return;
   }
@@ -597,7 +705,7 @@ function onAction(teamId, qid, value) {
   if ((R.type === 'pubs' || R.type === 'defis') && R.step === 'vote' && teamId !== R.order[R.ti] && !R.votes[teamId] && (value === 'yes' || value === 'no')) {
     R.votes[teamId] = value;
     play('pop');
-    if (voters().every((id) => R.votes[id])) closeVote();
+    if (voters().every((id) => R.votes[id])) voteWithSuspense();
     else sync();
   }
 }
@@ -642,6 +750,7 @@ function startMenuQuestion() {
     play('twist');
   } else {
     R.step = 'judge';
+    R.deadline = answerDeadline();
     say(`menus:${R.theme}:${R.qi}`, R.item.q);
   }
   sync();
@@ -650,9 +759,10 @@ function startMenuQuestion() {
 function judgeMenu(ok) {
   const R = S.R;
   R.lastOk = ok;
+  R.deadline = 0;
   if (ok) {
     R.correct++;
-    addScore(R.order[R.ti], 1 * mult());
+    R.lastGain = addScore(R.order[R.ti], 1 * mult());
     applySteal(R.order[R.ti]);
     play('good');
   } else play('bad');
@@ -664,10 +774,10 @@ function judgeMenu(ok) {
 function nextMenuQuestion() {
   const R = S.R;
   R.qi++;
-  if (R.qi < 3) return startMenuQuestion();
+  if (R.qi < menuQs()) return startMenuQuestion();
   R.step = 'summary';
   R.twist = null;
-  if (R.correct === 3) {
+  if (R.correct === menuQs()) {
     addScore(R.order[R.ti], 1);
     play('fanfare');
   }
@@ -683,8 +793,21 @@ function nextMenuTeam() {
 
 // ---------- Fausses pubs et Défis ----------
 
+// toutes les équipes votent, sauf celle qui joue (même celles qui ne passent pas cette manche)
 function voters() {
-  return S.R.order.filter((id) => id !== S.R.order[S.R.ti]);
+  return activeTeams().map((t) => t.id).filter((id) => id !== S.R.order[S.R.ti]);
+}
+
+// Durée : en Rapide et Court, seules quelques équipes passent aux pubs et aux défis.
+// On fait passer en priorité celles qui n'ont encore rien joué devant les autres.
+function pickPerformers() {
+  const k = Math.min(len().performers, activeTeams().length);
+  const ids = shuffle(activeTeams().map((t) => t.id));
+  const done = S.performed || [];
+  const chosen = [...ids.filter((id) => !done.includes(id)), ...ids.filter((id) => done.includes(id))].slice(0, k);
+  S.performed = [...new Set([...done, ...chosen])];
+  // on garde l'ordre des équipes de la partie
+  return activeTeams().map((t) => t.id).filter((id) => chosen.includes(id));
 }
 
 function startPerformer() {
@@ -761,8 +884,17 @@ function onTimeout() {
   play('timeup');
   if (R.type === 'selpoivre' && R.step === 'choose') {
     R.step = 'locked';
-    reveal();
+    revealWithSuspense();
     return;
+  }
+  // chrono de réponse écoulé : la réponse compte comme fausse
+  if (['nuggets', 'addition', 'burger'].includes(R.type) && R.step === 'answer') {
+    toast('⏱ Temps écoulé !');
+    return judgeBuzz(false);
+  }
+  if (R.type === 'menus' && R.step === 'judge') {
+    toast('⏱ Temps écoulé !');
+    return judgeMenu(false);
   }
   if (R.type === 'pubs' && R.step === 'prep') return startPub();
   else if ((R.type === 'pubs' && R.step === 'show') || (R.type === 'defis' && R.step === 'run')) return openVote();
@@ -794,7 +926,7 @@ function closeVote(forced) {
   }
   if (R.type === 'pubs') R.resultText = forced == null ? `${yes} vote${yes > 1 ? 's' : ''} « Convaincu » sur ${cast}` : '';
   else R.resultText = R.points ? 'Défi réussi !' : 'Défi raté…';
-  addScore(team, R.points);
+  R.points = addScore(team, R.points);
   R.step = 'result';
   if (R.type === 'defis') clearSecrets();
   play(R.points ? 'good' : 'bad');
@@ -844,6 +976,7 @@ function togglePause() {
     if (S.R) {
       if (S.R.deadline) S.R.deadline += d;
       if (S.R.readUntil) S.R.readUntil += d;
+      if (S.R.suspenseUntil) S.R.suspenseUntil += d;
     }
   }
   sync();
@@ -858,6 +991,10 @@ setInterval(() => {
   if (S.paused || S.phase !== 'play' || !R) return;
   const now = Date.now();
   if (R.step === 'read' && R.readUntil && now >= R.readUntil) endRead();
+  if (R.step === 'suspense' && R.suspenseUntil && now >= R.suspenseUntil) {
+    R.suspenseUntil = 0;
+    return runSuspenseNext(R.suspenseNext);
+  }
   if (R.deadline) {
     const left = Math.ceil((R.deadline - now) / 1000);
     if (left <= 5 && left > 0 && left !== lastTick) play('tick');
@@ -917,7 +1054,7 @@ function pointsAtStake() {
   const R = S.R;
   if (S.phase !== 'play' || !R || R.step === 'twist') return null;
   const m = mult();
-  const x3 = m > 1 ? ' (×3)' : '';
+  const x3 = (m > 1 ? ' (triple)' : '') + (R.twist?.boost ? ` · double pour ${R.twist.boost.map((id) => teamById(id).name).join(', ')}` : '');
   switch (R.type) {
     case 'nuggets':
       return `+${m}${x3}`;
@@ -928,7 +1065,7 @@ function pointsAtStake() {
     case 'selpoivre':
       return `+${m} par bonne réponse${x3}`;
     case 'menus':
-      return R.step === 'pick' ? '+1 par question, +1 bonus si 3/3' : `+${m}${x3} · bonus +1 si 3/3`;
+      return R.step === 'pick' ? `+1 par question, +1 bonus si ${menuQs()}/${menuQs()}` : `+${m}${x3} · bonus +1 si ${menuQs()}/${menuQs()}`;
     case 'pubs':
       return R.step === 'brief' || R.step === 'prep' ? null : activeTeams().length === 2 ? '+2 si convaincus · +1 fou rire possible' : '+2 si majorité convaincue · +1 si égalité';
     case 'defis':
@@ -949,7 +1086,7 @@ function remoteState() {
   }));
   let headline = '';
   if (S.phase === 'lobby') headline = 'Salle d’attente : les équipes rejoignent la partie';
-  else if (S.phase === 'round-intro') headline = `${C.ROUNDS[type].title} : ${C.ROUNDS[type].rules}`;
+  else if (S.phase === 'round-intro') headline = `${C.ROUNDS[type].title} : ${roundRules(type)}`;
   else if (S.phase === 'podium') headline = `🏆 ${ranking()[0].name} gagne !`;
   else if (R) {
     if (R.step === 'twist') headline = '';
@@ -972,7 +1109,7 @@ function remoteState() {
     // règle bizarre en entier, comme à l'écran (grande carte pendant l'annonce, rappel ensuite)
     twist: R?.twist ? { title: R.twist.title, text: R.twist.text, announce: R.step === 'twist' } : null,
     points: pointsAtStake(),
-    extras: [R?.stealInfo, R?.swapInfo, R?.type === 'menus' && R.step === 'summary' && R.correct === 3 ? 'Menu complet : +1 bonus !' : null, R?.bonus ? '😂 +1 fou rire accordé' : null].filter(Boolean),
+    extras: [R?.stealInfo, R?.swapInfo, R?.type === 'menus' && R.step === 'summary' && R.correct === menuQs() ? 'Menu complet : +1 bonus !' : null, R?.bonus ? '😂 +1 fou rire accordé' : null].filter(Boolean),
     deadline: R?.deadline || 0,
     paused: S.paused,
     muted: isMuted(),
@@ -1061,6 +1198,7 @@ function renderScores() {
       return `<div class="score-card ${hot ? 'hot' : ''} ${out ? 'out' : ''} ${now - (bumped[t.id] || 0) < 1500 ? 'bump' : ''}" style="--team:${t.color};--ink:${t.ink}">
         <div class="score-name"><span class="score-emoji">${a.emoji}</span>${esc(t.name)}</div>
         <div class="score-pts">${t.score}</div>
+        ${boosted(t.id) ? '<div class="score-boost">×2</div>' : ''}
         ${S.mode === 'net' ? `<div class="score-dev" title="Téléphones connectés">📱 ${n}</div>` : ''}
         ${S.adjust ? `<div class="score-adj"><button data-act="adj" data-team="${t.id}" data-d="-1">−1</button><button data-act="adj" data-team="${t.id}" data-d="1">+1</button></div>` : ''}
       </div>`;
@@ -1160,6 +1298,14 @@ function renderSetup() {
         <div class="setup-teams">${teamsHtml}</div>
       </div>
       <div class="card">
+        <h2>Durée de la partie</h2>
+        <div class="seg seg-3">
+          ${Object.entries(C.LENGTHS).map(([k, L]) => `<button class="${st.length === k ? 'on' : ''}" data-act="length" data-v="${k}">${L.label}<small>${L.hint}</small></button>`).join('')}
+        </div>
+        <p class="hint">${len().nuggets} Nuggets · ${len().selpoivre} Sel ou Poivre · ${len().addition} Additions · menus de ${len().menuQs} questions · ${len().burger} Burgers · ${Math.min(len().performers, st.nTeams) >= st.nTeams ? 'toutes les équipes' : `${len().performers} équipes`} aux pubs et défis.
+          <b>Environ ${estimateMinutes(st)} minutes</b> avec ces réglages.</p>
+      </div>
+      <div class="card">
         <h2>Manches</h2>
         <div class="chks">${rounds}</div>
         <h2>Réglages</h2>
@@ -1170,6 +1316,12 @@ function renderSetup() {
             </select></label>
           <label class="chk"><input type="checkbox" data-set="selTimer" ${st.selTimer ? 'checked' : ''}> Chrono de 15 s pour Sel ou Poivre</label>
           <label class="chk"><input type="checkbox" data-set="buzzDuringRead" ${st.buzzDuringRead ? 'checked' : ''}> Buzzer autorisé pendant la lecture</label>
+          <label>Chrono pour répondre après un buzz
+            <select data-set="answerTimer">
+              ${[[0, 'Sans chrono'], [5, '5 secondes'], [10, '10 secondes'], [15, '15 secondes'], [20, '20 secondes']].map(([v, l]) => `<option value="${v}" ${st.answerTimer === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select></label>
+          <label class="chk"><input type="checkbox" data-set="suspense" ${st.suspense ? 'checked' : ''}> Suspense : roulement de tambour avant les révélations, annonce du nouveau leader, classement avant la finale</label>
+          <label class="chk"><input type="checkbox" data-set="catchup" ${st.catchup ? 'checked' : ''}> Coup de pouce : de temps en temps, l’équipe dernière marque double (règle bizarre)</label>
         </div>
       </div>
     </div>`,
@@ -1208,10 +1360,21 @@ function renderRoundIntro() {
       <div class="round-num">Manche ${S.ri + 1}${S.ri === S.settings.rounds.length - 1 && type === 'burger' ? ' · finale' : ''}</div>
       <div class="round-title">${esc(info.title)}</div>
       <div class="round-sub">${esc(info.subtitle)}</div>
-      <div class="round-rules">${esc(info.rules)}</div>
+      <div class="round-rules">${esc(roundRules(type))}</div>
+      ${finalStandings()}
     </div>`,
     btn('start-round', 'C’est parti !', 'btn-primary btn-big'),
   );
+}
+
+// classement dévoilé du dernier au premier avant la dernière manche (réglage « Suspense »)
+function finalStandings() {
+  if (!S.settings.suspense || S.ri === 0 || S.ri !== S.settings.rounds.length - 1) return '';
+  const r = ranking();
+  const n = r.length;
+  return `<div class="standings"><div class="standings-title">Classement avant la finale</div>${r
+    .map((t, i) => `<div class="standing" style="--team:${t.color};--ink:${t.ink};animation-delay:${0.4 + (n - 1 - i) * 0.5}s"><b>${rankOf(t)}</b>${animalOf(t).emoji} ${esc(t.name)}<span>${t.score} pt${Math.abs(t.score) > 1 ? 's' : ''}</span></div>`)
+    .join('')}</div>`;
 }
 
 function twistCard(R) {
@@ -1241,6 +1404,10 @@ function renderPlay() {
     const next = R.type === 'menus' ? 'twist-ok-menu' : 'twist-ok';
     return stage(twistCard(R), btn(next, 'Compris !', 'btn-primary btn-big'));
   }
+  if (R.step === 'suspense') {
+    const what = R.type === 'selpoivre' ? `<div class="question">${esc(R.item.q)}</div>` : '';
+    return stage(`${what}<div class="suspense">🥁<span>${R.type === 'selpoivre' ? 'Et la réponse est…' : 'Le verdict…'}</span></div>`);
+  }
   switch (R.type) {
     case 'nuggets':
     case 'addition':
@@ -1263,7 +1430,7 @@ function questionBody(R) {
 
 function renderBuzzRound(R) {
   const pts = (R.type === 'nuggets' ? 1 : 2) * mult();
-  const ptsLabel = R.type === 'burger' ? `+${pts} / −${mult()}` : `+${pts}`;
+  const ptsLabel = (R.type === 'burger' ? `+${pts} / −${mult()}` : `+${pts}`) + (R.twist?.boost ? ' · double pour les derniers' : '');
   let status = '';
   let controls = '';
   if (R.step === 'read') {
@@ -1276,10 +1443,10 @@ function renderBuzzRound(R) {
     controls = (R.twist?.id === 'dernier' ? btn('close-buzz', 'Clore les buzz', 'btn-ghost') + ' ' : '') + btn('nobody', 'Personne ne sait', 'btn-ghost');
   } else if (R.step === 'answer') {
     const t = teamById(R.winner);
-    status = `<div class="buzzed" style="--team:${t.color};--ink:${t.ink}"><span class="buzzed-emoji">${animalOf(t).emoji}</span>${esc(t.name)}</div>`;
+    status = `<div class="buzzed" style="--team:${t.color};--ink:${t.ink}"><span class="buzzed-emoji">${animalOf(t).emoji}</span>${esc(t.name)}</div>${R.deadline ? `<div class="big-timer" data-deadline="${R.deadline}"></div>` : ''}`;
     controls = `<span class="ctl-label">Leur réponse est…</span> ${btn('right', '✔ Juste', 'btn-good btn-big')} ${btn('wrong', '✘ Fausse', 'btn-bad btn-big')}`;
   } else if (R.step === 'reveal') {
-    const who = R.lastOk && R.winner ? `<div class="verdict good">${esc(teamById(R.winner).name)} marque ${ptsLabel.split(' ')[0]} !</div>` : R.lastOk === false ? '<div class="verdict bad">Raté !</div>' : '';
+    const who = R.lastOk && R.winner ? `<div class="verdict good">${esc(teamById(R.winner).name)} marque +${R.lastGain} !</div>` : R.lastOk === false ? '<div class="verdict bad">Raté !</div>' : '';
     status = `<div class="answer"><small>Réponse</small>${esc(R.item.a)}</div>${who}${extraInfo(R)}`;
     controls = btn('next', R.qi + 1 >= R.items.length ? 'Fin de la manche' : 'Question suivante', 'btn-primary btn-big');
   }
@@ -1303,7 +1470,7 @@ function renderSelPoivre(R) {
     status = `<div class="answer sp-${good}">${R.item.sel ? '🧂 SEL' : '🌶️ POIVRE'}<small>${esc(R.item.why)}</small></div>
       <div class="locks">${teams.map((t) => {
         const c = R.choices[t.id];
-        return `<span class="lock ${c === good ? 'win' : 'lose'}" style="--team:${t.color};--ink:${t.ink}">${esc(t.name)} : ${c ? (c === 'sel' ? '🧂' : '🌶️') : '—'} ${c === good ? `+${mult()}` : ''}</span>`;
+        return `<span class="lock ${c === good ? 'win' : 'lose'}" style="--team:${t.color};--ink:${t.ink}">${esc(t.name)} : ${c ? (c === 'sel' ? '🧂' : '🌶️') : '—'} ${c === good ? `+${effective(t.id, mult())}` : ''}</span>`;
       }).join('')}</div>${extraInfo(R)}`;
     controls = btn('next', R.qi + 1 >= R.items.length ? 'Fin de la manche' : 'Affirmation suivante', 'btn-primary btn-big');
   }
@@ -1321,19 +1488,22 @@ function renderMenus(R) {
     );
   }
   const theme = C.MENUS[R.theme].theme;
-  const dots = [0, 1, 2].map((i) => `<span class="dot ${i < R.qi || (i === R.qi && R.step !== 'judge') ? 'done' : ''}">${i + 1}</span>`).join('');
+  const dots = [...Array(menuQs()).keys()].map((i) => `<span class="dot ${i < R.qi || (i === R.qi && R.step !== 'judge') ? 'done' : ''}">${i + 1}</span>`).join('');
   if (R.step === 'summary') {
     return stage(
-      `${head}<div class="menu-theme">Menu « ${esc(theme)} »</div><div class="answer">${R.correct}/3${R.correct === 3 ? '<small>Menu complet : +1 bonus !</small>' : ''}</div>`,
+      `${head}<div class="menu-theme">Menu « ${esc(theme)} »</div><div class="answer">${R.correct}/${menuQs()}${R.correct === menuQs() ? '<small>Menu complet : +1 bonus !</small>' : ''}</div>`,
       btn('menu-next-team', R.ti + 1 >= R.order.length ? 'Fin de la manche' : 'Équipe suivante', 'btn-primary btn-big'),
     );
   }
   let status = '';
   let controls = '';
-  if (R.step === 'judge') controls = `<span class="ctl-label">Leur réponse est…</span> ${btn('menu-right', '✔ Juste', 'btn-good btn-big')} ${btn('menu-wrong', '✘ Fausse', 'btn-bad btn-big')}`;
+  if (R.step === 'judge') {
+    controls = `<span class="ctl-label">Leur réponse est…</span> ${btn('menu-right', '✔ Juste', 'btn-good btn-big')} ${btn('menu-wrong', '✘ Fausse', 'btn-bad btn-big')}`;
+    if (R.deadline) status = `<div class="big-timer" data-deadline="${R.deadline}"></div>`;
+  }
   else {
-    status = `<div class="answer"><small>Réponse</small>${esc(R.item.a)}</div><div class="verdict ${R.lastOk ? 'good' : 'bad'}">${R.lastOk ? `+${mult()} !` : 'Raté !'}</div>${extraInfo(R)}`;
-    controls = btn('menu-next-q', R.qi + 1 >= 3 ? 'Voir le bilan' : 'Question suivante', 'btn-primary btn-big');
+    status = `<div class="answer"><small>Réponse</small>${esc(R.item.a)}</div><div class="verdict ${R.lastOk ? 'good' : 'bad'}">${R.lastOk ? `+${R.lastGain} !` : 'Raté !'}</div>${extraInfo(R)}`;
+    controls = btn('menu-next-q', R.qi + 1 >= menuQs() ? 'Voir le bilan' : 'Question suivante', 'btn-primary btn-big');
   }
   stage(`${twistBanner(R)}${head}<div class="menu-theme">Menu « ${esc(theme)} » <span class="dots">${dots}</span></div>${questionBody(R)}${status}`, `${controls}<div class="laughs">${laughButtons(R)}</div>`);
 }
@@ -1442,6 +1612,9 @@ function doAct(act, d, fromRemote) {
     case 'mode':
       S.mode = d.v;
       return render();
+    case 'length':
+      S.settings.length = d.v;
+      return render();
     case 'nteams':
       S.settings.nTeams = Number(d.v);
       fixAnimals();
@@ -1478,6 +1651,7 @@ function doAct(act, d, fromRemote) {
       return sync();
     case 'twist-ok-menu':
       R.step = 'judge';
+      R.deadline = answerDeadline();
       return sync();
     case 'open-now':
       return endRead();
@@ -1491,7 +1665,7 @@ function doAct(act, d, fromRemote) {
       return judgeBuzz(false);
     case 'reveal':
       if (R.step === 'choose') R.step = 'locked';
-      return reveal();
+      return revealWithSuspense();
     case 'next':
       return nextItem();
     case 'laugh':
@@ -1519,11 +1693,11 @@ function doAct(act, d, fromRemote) {
     case 'end-perf':
       return openVote();
     case 'close-vote':
-      return closeVote();
+      return voteWithSuspense();
     case 'force-ok':
-      return closeVote(true);
+      return voteWithSuspense(true);
     case 'force-ko':
-      return closeVote(false);
+      return voteWithSuspense(false);
     case 'bonus-laugh':
       return bonusLaugh();
     case 'next-perf':
@@ -1544,7 +1718,7 @@ function doAct(act, d, fromRemote) {
     case 'menu':
       return openMenu();
     case 'adj':
-      addScore(d.team, Number(d.d));
+      addScore(d.team, Number(d.d), true);
       return sync();
     case 'm-adjust':
       S.adjust = !S.adjust;
@@ -1607,6 +1781,9 @@ document.addEventListener('change', (e) => {
   if (el.dataset.set === 'twistRate') S.settings.twistRate = Number(el.value);
   if (el.dataset.set === 'selTimer') S.settings.selTimer = el.checked;
   if (el.dataset.set === 'buzzDuringRead') S.settings.buzzDuringRead = el.checked;
+  if (el.dataset.set === 'answerTimer') S.settings.answerTimer = Number(el.value);
+  if (el.dataset.set === 'suspense') S.settings.suspense = el.checked;
+  if (el.dataset.set === 'catchup') S.settings.catchup = el.checked;
 });
 
 // clavier : Espace = action principale, P = pause, 1/2/3 = buzzers en mode tablette

@@ -151,7 +151,7 @@ kbd { font-family: var(--body); font-size: .75em; background: rgba(0,0,0,.25); b
 
 /* ---------- intro de manche ---------- */
 .round-intro { display: flex; flex-direction: column; gap: 12px; align-items: center; }
-.round-num { text-transform: uppercase; letter-spacing: .2em; color: var(--muted); font-weight: 800; }
+.round-num { margin-bottom: 14px; text-transform: uppercase; letter-spacing: .2em; color: var(--muted); font-weight: 800; }
 .round-title { font-family: var(--display); font-size: clamp(3rem, 11vw, 8rem); line-height: .95; color: var(--yellow); text-shadow: 0 6px 0 var(--red), 0 12px 0 rgba(0,0,0,.35); }
 .round-intro.burger .round-title { color: #ff5a3c; text-shadow: 0 6px 0 #4a0b05, 0 0 40px rgba(255,60,20,.5); animation: shake 2s infinite; }
 .round-sub { font-family: var(--display); font-size: clamp(1.4rem, 3vw, 2.2rem); }
@@ -401,3 +401,28 @@ body.has-remote .controls { display: none; }
 .r-extra { background: #6d2bd9; color: #fff; border-radius: 12px; padding: 8px 12px; font-weight: 800; }
 .r-menu { flex-direction: row; justify-content: center; padding: 14px; font-size: 1.6rem; }
 .r-menu span { font-size: 1.3rem; }
+
+/* ---------- suspense, classement, leader, coup de pouce ---------- */
+.suspense { font-size: clamp(4rem, 12vw, 8rem); display: flex; flex-direction: column; align-items: center; animation: drum .12s infinite alternate; }
+.suspense span { font-family: var(--display); font-size: clamp(1.8rem, 5vw, 3.4rem); color: var(--yellow); animation: none; }
+@keyframes drum { from { transform: translateY(0) rotate(-3deg); } to { transform: translateY(-6px) rotate(3deg); } }
+.standings { display: flex; flex-direction: column; gap: 6px; width: min(560px, 100%); margin-top: 6px; }
+.standings-title { font-family: var(--display); color: var(--yellow); font-size: 1.4rem; }
+.standing { background: var(--team); color: var(--ink); border-radius: 12px; padding: 6px 14px; display: flex; gap: 10px; align-items: center; font-weight: 800; font-size: 1.15rem; opacity: 0; animation: standing-in .5s ease-out forwards; }
+.standing b { font-family: var(--display); font-size: 1.4rem; min-width: 1.4em; }
+.standing span { margin-left: auto; }
+@keyframes standing-in { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: none; } }
+.announce { position: fixed; left: 50%; top: 18%; transform: translate(-50%, -50%) scale(.3); opacity: 0; pointer-events: none; z-index: 15; background: var(--team); color: var(--ink); font-family: var(--display); font-size: clamp(2rem, 6vw, 4.5rem); padding: .3em .9em; border-radius: 24px; box-shadow: 0 0 0 6px #fff, 0 20px 60px rgba(0,0,0,.6); white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; }
+.announce.show { animation: announce 2.6s cubic-bezier(.2, 1.6, .4, 1) forwards; }
+@keyframes announce { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.3); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 85% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(.8); } }
+.score-card { position: relative; }
+.score-boost { position: absolute; top: -10px; right: -6px; background: #6d2bd9; color: #fff; font-family: var(--body); font-weight: 800; font-size: .95rem; padding: 2px 8px; border-radius: 999px; box-shadow: 0 0 0 2px #fff; animation: pulse 1s infinite; }
+.phone-me { margin-left: auto; margin-right: 10px; font-weight: 800; font-size: .95rem; white-space: nowrap; }
+.phone-me b { font-family: var(--display); font-size: 1.3rem; font-weight: 400; }
+.me-boost { background: #6d2bd9; color: #fff; border-radius: 999px; padding: 1px 7px; margin-right: 6px; font-weight: 800; }
+.score-pop { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); font-family: var(--display); font-size: 6rem; z-index: 30; pointer-events: none; animation: score-pop 1.8s ease-out forwards; text-shadow: 0 6px 0 rgba(0,0,0,.4); }
+.score-pop.up { color: #6ee07c; }
+.score-pop.down { color: #ff6b5e; }
+@keyframes score-pop { 0% { opacity: 0; transform: translate(-50%, -20%) scale(.4); } 20% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } 70% { opacity: 1; transform: translate(-50%, -60%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -110%) scale(.9); } }
+
+.seg-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
