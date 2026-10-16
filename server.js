@@ -49,13 +49,22 @@ function send(ws, msg) {
 
 function createRoom(code = newCode(), hostToken = crypto.randomUUID(), remoteKey = crypto.randomBytes(9).toString('base64url')) {
   // remoteKey : clé secrète de la télécommande du présentateur (dans son QR code)
-  const room = { code, hostToken, remoteKey, host: null, sockets: new Map(), remotes: new Set(), remoteState: null, touched: Date.now() };
+  // remoteAllowed : l'écran a activé le présentateur ; remoteOwner : identifiant du seul téléphone présentateur
+  const room = { code, hostToken, remoteKey, remoteAllowed: false, remoteOwner: null, host: null, sockets: new Map(), remotes: new Set(), remoteState: null, touched: Date.now() };
   room.hub = new Hub({
     toHost: (msg) => send(room.host, msg),
     toDevice: (id, msg) => send(room.sockets.get(id), msg),
   });
   rooms.set(code, room);
   return room;
+}
+
+function closeRemotes(room, reason) {
+  for (const r of room.remotes) {
+    send(r, { t: 'error', error: reason });
+    r.close(4001, 'présentateur retiré');
+  }
+  room.remotes.clear();
 }
 
 function sendRemoteCount(room) {
@@ -174,6 +183,19 @@ wss.on('connection', (ws) => {
           send(ws, { t: 'error', error: 'Lien de présentateur invalide. Rescannez le QR code du présentateur.' });
           return;
         }
+        if (!r.remoteAllowed) {
+          send(ws, { t: 'error', error: 'Cette partie se joue sans présentateur.' });
+          return;
+        }
+        // un seul présentateur : le premier téléphone garde la place (il la retrouve après une mise en veille)
+        const rid = String(msg.rid || '').slice(0, 64);
+        if (r.remoteOwner && r.remoteOwner !== rid) {
+          send(ws, { t: 'error', error: 'Un présentateur est déjà connecté à cette partie.' });
+          return;
+        }
+        r.remoteOwner = rid || crypto.randomUUID();
+        for (const old of r.remotes) old.close(4000, 'remplacé');
+        r.remotes.clear();
         room = r;
         role = 'remote';
         room.remotes.add(ws);
@@ -206,6 +228,24 @@ wss.on('connection', (ws) => {
     room.touched = Date.now();
     if (role === 'remote') {
       if (msg.t === 'remote:act') send(room.host, { t: 'remote:act', act: String(msg.act || ''), data: msg.data || {} });
+      return;
+    }
+    if (role === 'host' && msg.t === 'remote:config') {
+      room.remoteAllowed = !!msg.allow;
+      if (!room.remoteAllowed) {
+        room.remoteOwner = null;
+        closeRemotes(room, 'Le présentateur a été désactivé sur l’écran de jeu.');
+        sendRemoteCount(room);
+      }
+      return;
+    }
+    if (role === 'host' && msg.t === 'remote:reset') {
+      // changer de présentateur : nouvelle clé, l'ancien QR code ne marche plus
+      room.remoteKey = crypto.randomBytes(9).toString('base64url');
+      room.remoteOwner = null;
+      closeRemotes(room, 'Le présentateur a été changé. Rescannez le nouveau QR code.');
+      send(ws, { t: 'room', code: room.code, hostToken: room.hostToken, remoteKey: room.remoteKey });
+      sendRemoteCount(room);
       return;
     }
     if (role === 'host' && msg.t === 'remote:state') {

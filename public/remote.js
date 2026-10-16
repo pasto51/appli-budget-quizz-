@@ -15,8 +15,20 @@ let deadline = 0;
 let error = null;
 let adjust = false;
 
+// identifiant de ce téléphone : il retrouve sa place de présentateur après une mise en veille
+let rid = null;
+try {
+  rid = localStorage.getItem('bq.remote');
+  if (!rid) {
+    rid = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2) + Date.now();
+    localStorage.setItem('bq.remote', rid);
+  }
+} catch {
+  rid = String(Math.random()).slice(2);
+}
+
 const sock = new Socket({
-  onOpen: () => sock.send({ t: 'remote:join', code, key }),
+  onOpen: () => sock.send({ t: 'remote:join', code, key, rid }),
   onMessage: (msg) => {
     if (msg.t === 'error') {
       error = msg.error;

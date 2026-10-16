@@ -426,3 +426,5 @@ body.has-remote .controls { display: none; }
 @keyframes score-pop { 0% { opacity: 0; transform: translate(-50%, -20%) scale(.4); } 20% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } 70% { opacity: 1; transform: translate(-50%, -60%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -110%) scale(.9); } }
 
 .seg-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.presenter-opt { margin-top: 12px; }

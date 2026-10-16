@@ -30,7 +30,7 @@ const store = {
 // ---------- état ----------
 
 function defaultSettings() {
-  return { nTeams: 3, length: 'long', twistRate: 0.2, selTimer: true, buzzDuringRead: false, answerTimer: 10, suspense: true, catchup: true, rounds: [...C.ROUND_ORDER] };
+  return { nTeams: 3, length: 'long', presenter: false, twistRate: 0.2, selTimer: true, buzzDuringRead: false, answerTimer: 10, suspense: true, catchup: true, rounds: [...C.ROUND_ORDER] };
 }
 
 function freshState() {
@@ -183,6 +183,7 @@ function onHubMessage(msg) {
       lastRemote = '';
       computeJoinUrl();
       resync();
+      if ($('menu').querySelector('.presenter-box')) showPresenter(); // nouveau QR après « Changer de présentateur »
       break;
     case 'devices':
       deviceCounts = msg.counts;
@@ -218,6 +219,7 @@ function resync() {
   lastViews = {};
   buzzOpenKey = null;
   hostSend({ t: 'teams', teams: activeTeams() });
+  if (S.mode === 'net') net?.send({ t: 'remote:config', allow: !!S.settings.presenter });
   for (const [team, sec] of Object.entries(S.secrets || {})) hostSend({ t: 'secret', team, target: sec.target, payload: sec.payload });
   sync();
 }
@@ -397,6 +399,7 @@ function startGame() {
   if (S.phase === 'round-intro') introRound();
   connect();
   hostSend({ t: 'teams', teams: activeTeams() });
+  if (S.mode === 'net') net?.send({ t: 'remote:config', allow: !!S.settings.presenter });
   sync();
 }
 
@@ -1028,7 +1031,7 @@ function render() {
   else renderPlay();
   renderPanels();
   $('pause').classList.toggle('show', S.paused);
-  document.body.classList.toggle('has-remote', S.mode === 'net' && remoteCount > 0 && S.phase !== 'setup');
+  document.body.classList.toggle('has-remote', S.mode === 'net' && S.settings.presenter && remoteCount > 0 && S.phase !== 'setup');
   sendRemote();
 }
 
@@ -1119,7 +1122,7 @@ function remoteState() {
 }
 
 function sendRemote() {
-  if (S.mode !== 'net' || !net || !S.code) return;
+  if (S.mode !== 'net' || !net || !S.code || !S.settings.presenter) return;
   const state = remoteState();
   const json = JSON.stringify(state);
   if (json === lastRemote) return;
@@ -1128,6 +1131,7 @@ function sendRemote() {
 }
 
 function onRemoteAct(act, data) {
+  if (!S.settings.presenter) return;
   ensureAudio();
   // on n'accepte que les boutons affichés en ce moment (évite les doubles appuis)
   const shown = remoteState().buttons.some((b) => b.act === act && !b.disabled && (b.data.v ?? null) === (data.v ?? null) && (b.data.team ?? null) === (data.team ?? null));
@@ -1288,6 +1292,7 @@ function renderSetup() {
           <button class="${S.mode === 'net' ? 'on' : ''}" data-act="mode" data-v="net">📱 Avec les téléphones<small>chaque équipe a son buzzer</small></button>
           <button class="${S.mode === 'local' ? 'on' : ''}" data-act="mode" data-v="local">📺 Tablette unique<small>tout sur cet écran</small></button>
         </div>
+        ${S.mode === 'net' ? `<label class="chk presenter-opt"><input type="checkbox" data-set="presenter" ${st.presenter ? 'checked' : ''}> 🎤 Avec un présentateur : il pilote le jeu depuis son téléphone et voit les réponses (un seul présentateur, QR code secret)</label>` : ''}
       </div>
       <div class="card">
         <h2>Équipes</h2>
@@ -1348,7 +1353,7 @@ function renderLobby() {
         <p class="hint">Plusieurs téléphones par équipe ? Pas de souci, ils buzzent tous pour leur équipe.</p>
       </div>
     </div>`,
-    `${btn('m-presenter', remoteCount ? '🎤 Présentateur connecté' : '🎤 Présentateur', 'btn-ghost')} ${btn('test-sounds', '🔊 Tester les cris', 'btn-ghost')} ${btn('begin', 'Lancer la partie !', 'btn-primary btn-big')}`,
+    `${S.settings.presenter ? btn('m-presenter', remoteCount ? '🎤 Présentateur connecté' : '🎤 Présentateur', 'btn-ghost') + ' ' : ''}${btn('test-sounds', '🔊 Tester les cris', 'btn-ghost')} ${btn('begin', 'Lancer la partie !', 'btn-primary btn-big')}`,
   );
 }
 
@@ -1579,7 +1584,8 @@ function openMenu() {
     <h2>Menu</h2>
     ${btn('m-adjust', S.adjust ? 'Masquer la correction des scores' : 'Corriger les scores (±1)')}
     ${S.mode === 'net' ? btn('m-panels', S.showPanels ? 'Masquer les commandes à l’écran' : 'Commandes à l’écran (téléphone en panne)') : ''}
-    ${S.mode === 'net' && S.code ? btn('m-presenter', '🎤 Télécommande du présentateur') : ''}
+    ${S.mode === 'net' && S.code && S.settings.presenter ? btn('m-presenter', '🎤 Télécommande du présentateur') + btn('m-presenter-reset', '🔄 Changer de présentateur') : ''}
+    ${S.mode === 'net' && S.code ? btn('m-presenter-toggle', S.settings.presenter ? '🚫 Désactiver le présentateur' : '🎤 Activer un présentateur') : ''}
     ${S.phase === 'play' || S.phase === 'round-intro' ? btn('m-skip', 'Passer à la manche suivante') : ''}
     ${btn('m-end', 'Terminer la partie', 'btn-bad')}
     ${btn('m-close', 'Fermer', 'btn-primary')}
@@ -1742,6 +1748,18 @@ function doAct(act, d, fromRemote) {
       return $('menu').classList.remove('show');
     case 'm-presenter':
       return showPresenter();
+    case 'm-presenter-reset':
+      if (fromRemote) return;
+      net?.send({ t: 'remote:reset' });
+      $('menu').innerHTML = '<div class="menu-box presenter-box"><h2>🔄 Nouveau QR code…</h2></div>';
+      return;
+    case 'm-presenter-toggle':
+      if (fromRemote) return;
+      S.settings.presenter = !S.settings.presenter;
+      net?.send({ t: 'remote:config', allow: S.settings.presenter });
+      $('menu').classList.remove('show');
+      if (S.settings.presenter) showPresenter();
+      return sync();
   }
 }
 
@@ -1784,6 +1802,7 @@ document.addEventListener('change', (e) => {
   if (el.dataset.set === 'answerTimer') S.settings.answerTimer = Number(el.value);
   if (el.dataset.set === 'suspense') S.settings.suspense = el.checked;
   if (el.dataset.set === 'catchup') S.settings.catchup = el.checked;
+  if (el.dataset.set === 'presenter') S.settings.presenter = el.checked;
 });
 
 // clavier : Espace = action principale, P = pause, 1/2/3 = buzzers en mode tablette

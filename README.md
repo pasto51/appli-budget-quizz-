@@ -32,20 +32,13 @@ Plusieurs téléphones peuvent rejoindre la même équipe : ils buzzent tous pou
 
 ### Avec un présentateur
 
-Dans la salle d'attente (ou plus tard via ☰), le bouton **🎤 Présentateur** affiche un QR code réservé au présentateur : les joueurs détournent les yeux. Sur son téléphone, il a les boutons du jeu (Juste / Fausse, Question suivante…), la réponse avant tout le monde, les scores avec correction ±1, la pause et le son. Tant qu'il est connecté, la télé n'affiche plus de boutons.
+À cocher au lancement (« 🎤 Avec un présentateur », désactivé par défaut). Le bouton **🎤 Présentateur** de la salle d'attente (ou du menu ☰) affiche alors un QR code réservé au présentateur : les joueurs détournent les yeux. Sur son téléphone, il a les boutons du jeu, la réponse avant tout le monde, les scores avec correction ±1, la pause et le son. Tant qu'il est connecté, la télé n'affiche plus de boutons.
 
-### Commandes de l'écran
-
-| Touche / bouton | Effet |
-|---|---|
-| Espace ou Entrée | Bouton principal (suivant, c'est parti…) |
-| P ou ⏸ | Pause (les téléphones affichent « Pause ») |
-| 1 à 9, 0 | Buzzer des équipes 1 à 10 (mode tablette, ou « Commandes à l'écran ») |
-| ☰ → Corriger les scores | Boutons ±1 sous chaque équipe |
-| ☰ → Commandes à l'écran | Remplace le téléphone d'une équipe en panne |
-| ☰ → Passer la manche / Terminer | Raccourcir la soirée |
-
-Si l'écran est rechargé, la partie peut être **reprise** là où elle en était. Si un téléphone se met en veille, il retrouve sa place tout seul.
+Sécurité :
+- le code de la salle (4 lettres) ne suffit pas : le QR code du présentateur contient une clé secrète ;
+- sans présentateur activé, le serveur refuse toute télécommande, même avec la bonne clé ;
+- **un seul présentateur** : le premier téléphone connecté garde la place (il la retrouve après une mise en veille), les autres sont refusés ;
+- menu ☰ → **Changer de présentateur** : déconnecte le présentateur actuel et génère un nouveau QR code (l'ancien ne marche plus) ; **Désactiver le présentateur** le déconnecte et rend les boutons à la télé.
 
 ## Réglages au lancement
 
