@@ -4,6 +4,7 @@ import { Socket } from './shared/net.js';
 import { renderControls, updateTimers, esc } from './shared/controls.js';
 import { ANIMALS } from './shared/content.js';
 import { unlockAudio, play, preloadSounds } from './shared/sounds.js';
+import { setupKeepAwake } from './shared/awake.js';
 
 const $main = document.getElementById('main');
 const $foot = document.getElementById('foot');
@@ -50,21 +51,11 @@ document.addEventListener(
       unlockAudio();
       audioReady = true;
     }
-    keepAwake();
   },
   { capture: true },
 );
 
-let wakeLock = null;
-async function keepAwake() {
-  try {
-    if ('wakeLock' in navigator && !wakeLock) {
-      wakeLock = await navigator.wakeLock.request('screen');
-      wakeLock.addEventListener('release', () => (wakeLock = null));
-    }
-  } catch {}
-}
-document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && keepAwake());
+setupKeepAwake();
 
 // ---------- connexion ----------
 

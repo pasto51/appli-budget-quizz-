@@ -3,6 +3,7 @@
 
 import { Socket } from './shared/net.js';
 import { esc, updateTimers } from './shared/controls.js';
+import { setupKeepAwake } from './shared/awake.js';
 
 const params = new URLSearchParams(location.search);
 const code = (params.get('code') || '').toUpperCase();
@@ -44,13 +45,7 @@ const sock = new Socket({
   onStatus: (s) => ($net.className = `phone-net net-${s}`),
 });
 
-let wakeLock = null;
-document.addEventListener('pointerdown', async () => {
-  try {
-    if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen');
-    wakeLock?.addEventListener('release', () => (wakeLock = null));
-  } catch {}
-});
+setupKeepAwake();
 
 function act(a, data = {}) {
   if (navigator.vibrate) navigator.vibrate(20);

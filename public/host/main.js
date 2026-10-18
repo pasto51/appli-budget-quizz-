@@ -8,7 +8,9 @@ import './actions.js'; // boutons, réglages, clavier
 import './game.js'; // horloge du jeu (chronos, fin de lecture)
 import { render } from './render.js';
 import { loadVoiceInfo } from './voice.js';
+import { setupKeepAwake } from '../shared/awake.js';
 
+setupKeepAwake(); // la tablette ou l'ordinateur de jeu ne se met pas en veille
 loadVoiceInfo();
 preloadSounds([...C.ANIMALS.map((a) => a.id), 'good', 'bad', 'twist', 'round', 'fanfare', 'burger', 'tick', 'timeup', 'reveal', 'pop']);
 

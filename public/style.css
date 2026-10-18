@@ -441,3 +441,6 @@ body.has-remote .controls { display: none; }
 /* panneaux du mode tablette : seulement l'essentiel (le texte est déjà sur l'écran) */
 .panel .ctl-wait .ctl-text, .panel .ctl-sub, .panel .ctl-timer, .panel .ctl-banner { display: none; }
 .panel .ctl-wait .ctl-title { font-size: .95rem; }
+
+.answer.peek { font-size: clamp(1.3rem, min(3.6vw, 5.5vh), 2.8rem); box-shadow: inset 0 0 0 3px var(--yellow); }
+.ctl-hint { color: var(--muted); font-size: .85rem; }

@@ -169,6 +169,20 @@ test('mauvaise réponse en Nuggets : la main passe aux autres équipes, ou −1 
   await host.click('[data-act=wrong]');
   await host.waitForSelector('.answer');
   assert.deepEqual(await scores(host), [0, -1, 0]);
+
+  // « Voir la réponse » : l'animateur la lit avant de juger ; en mode « la main passe », elle ne passe plus
+  await host.click('[data-act=menu]');
+  await host.click('[data-act=m-end]');
+  await host.click('[data-act=new-game]');
+  await setupGame(host, { mode: 'local', wrongAnswer: 'rebond' });
+  await host.click('[data-act=start-round]');
+  await host.waitForSelector('.panel .buzzer-armed');
+  await localBuzz(host, '1');
+  await host.click('[data-act=peek]');
+  await host.waitForSelector('.answer.peek');
+  await host.click('[data-act=wrong]');
+  await host.waitForSelector('[data-act=next]');
+  assert.equal(await host.$('.panel .buzzer-armed'), null, 'la main ne passe pas après avoir vu la réponse');
   noErrors(errors);
 });
 

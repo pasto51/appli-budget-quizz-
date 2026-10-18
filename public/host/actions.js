@@ -82,6 +82,9 @@ export function doAct(act, d, fromRemote) {
       return endRead();
     case 'close-buzz':
       return hostSend({ t: 'buzz:close' });
+    case 'peek':
+      R.peek = true;
+      return sync();
     case 'nobody':
       return nobody();
     case 'right':

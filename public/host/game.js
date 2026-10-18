@@ -162,6 +162,7 @@ function startItem() {
   const R = S.R;
   R.item = R.items[R.qi];
   R.winner = null;
+  R.peek = false;
   R.excluded = [];
   R.laughed = [];
   R.choices = {};
@@ -239,7 +240,8 @@ export function judgeBuzz(ok) {
   // Burger de la mort : toujours −1 et la main passe ; Nuggets / Addition : selon le réglage
   const burger = R.type === 'burger';
   if (burger || wrongCosts()) addScore(R.winner, -1 * mult());
-  if (burger || wrongPasses()) {
+  // la main passe… sauf si la réponse a déjà été affichée (« Voir la réponse »)
+  if ((burger || wrongPasses()) && !R.peek) {
     R.excluded.push(R.winner);
     const left = activeTeams().filter((t) => !R.excluded.includes(t.id));
     if (left.length) {
@@ -361,6 +363,7 @@ function chooseMenu(i) {
 function startMenuQuestion() {
   const R = S.R;
   R.item = C.MENUS[R.theme].qs[R.qi];
+  R.peek = false;
   R.laughed = [];
   R.stealInfo = null;
   R.swapInfo = null;

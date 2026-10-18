@@ -4,7 +4,19 @@ import * as C from '../shared/content.js';
 import { esc } from '../shared/controls.js';
 import { readDelayMs, voters } from './game.js';
 import { btn, stage } from './render.js';
-import { S, activeTeams, animalOf, effective, menuQs, mult, teamById, wrongCosts } from './state.js';
+import { S, activeTeams, animalOf, effective, menuQs, mult, teamById, wrongCosts, wrongPasses } from './state.js';
+
+// « Voir la réponse » : pour juger sans présentateur, la personne devant l'écran
+// affiche la bonne réponse avant de cliquer Juste / Fausse
+function peekButton(R) {
+  if (R.peek) return '';
+  const spoils = R.type !== 'menus' && (R.type === 'burger' || wrongPasses());
+  return btn('peek', '👁 Voir la réponse', 'btn-ghost') + (spoils ? '<span class="ctl-hint">(si c’est faux, la main ne passera pas)</span>' : '');
+}
+
+function peekAnswer(R) {
+  return R.peek ? `<div class="answer peek"><small>La bonne réponse</small>${esc(R.item.a)}</div>` : '';
+}
 
 // chrono de réponse, ou « temps écoulé » : l'animateur tranche avec Juste / Fausse
 function timeUpOrTimer(R) {
@@ -80,7 +92,8 @@ function renderBuzzRound(R) {
   } else if (R.step === 'answer') {
     const t = teamById(R.winner);
     status = `<div class="hero-row"><div class="buzzed" style="--team:${t.color};--ink:${t.ink}"><span class="buzzed-emoji">${animalOf(t).emoji}</span>${esc(t.name)}</div>${timeUpOrTimer(R)}</div>`;
-    controls = `<span class="ctl-label">Leur réponse est…</span> ${btn('right', '✔ Juste', 'btn-good btn-big')} ${btn('wrong', '✘ Fausse', 'btn-bad btn-big')}`;
+    status += peekAnswer(R);
+    controls = `<span class="ctl-label">Leur réponse est…</span> ${btn('right', '✔ Juste', 'btn-good btn-big')} ${btn('wrong', '✘ Fausse', 'btn-bad btn-big')} ${peekButton(R)}`;
   } else if (R.step === 'reveal') {
     const who = R.lastOk && R.winner ? `<div class="verdict good">${esc(teamById(R.winner).name)} marque +${R.lastGain} !</div>` : R.lastOk === false ? '<div class="verdict bad">Raté !</div>' : '';
     status = `<div class="answer"><small>Réponse</small>${esc(R.item.a)}</div>${who}${extraInfo(R)}`;
@@ -134,8 +147,8 @@ function renderMenus(R) {
   let status = '';
   let controls = '';
   if (R.step === 'judge') {
-    controls = `<span class="ctl-label">Leur réponse est…</span> ${btn('menu-right', '✔ Juste', 'btn-good btn-big')} ${btn('menu-wrong', '✘ Fausse', 'btn-bad btn-big')}`;
-    status = timeUpOrTimer(R);
+    controls = `<span class="ctl-label">Leur réponse est…</span> ${btn('menu-right', '✔ Juste', 'btn-good btn-big')} ${btn('menu-wrong', '✘ Fausse', 'btn-bad btn-big')} ${peekButton(R)}`;
+    status = timeUpOrTimer(R) + peekAnswer(R);
   }
   else {
     status = `<div class="answer"><small>Réponse</small>${esc(R.item.a)}</div><div class="verdict ${R.lastOk ? 'good' : 'bad'}">${R.lastOk ? `+${R.lastGain} !` : 'Raté !'}</div>${extraInfo(R)}`;

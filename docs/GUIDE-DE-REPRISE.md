@@ -141,6 +141,8 @@ https://appli-budget-quizz.onrender.com/
 | Un téléphone ne buzze plus | Recharger la page : il retrouve son équipe. Sinon menu ☰ → « Commandes à l'écran » |
 | La partie a planté | Recharger l'écran : « Reprendre la partie » |
 | Une question revient trop souvent | La mémoire est par appareil (`bq.seen` dans le navigateur de l'écran) |
+| L’écran se met en veille | `public/shared/awake.js` (Wake Lock, ou petite vidéo muette sur les vieux iPhone) ; s’active au premier appui. Le mode Économie d’énergie de l’iPhone peut quand même verrouiller |
+| L’icône de la tablette ouvre la page des joueurs | Supprimer l’icône, ouvrir `/host.html` puis « Sur l’écran d’accueil » (`manifest-host.webmanifest` ; les joueurs ont `manifest.webmanifest`) |
 | Le présentateur ne peut plus se connecter | Menu ☰ → « Changer de présentateur » (nouveau QR code) |
 
 Outils de diagnostic dans le navigateur de l'écran (console) :
