@@ -11,7 +11,7 @@ export function viewFor(teamId) {
   const R = S.R;
   const team = teamById(teamId);
   if (S.paused) return { screen: 'wait', title: 'Pause ☕', text: 'La partie reprend bientôt.' };
-  if (S.phase === 'lobby') return { screen: 'wait', title: `Bienvenue, ${team.name} !`, text: 'La partie va commencer. Regardez l’écran.' };
+  if (S.phase === 'lobby') return { screen: 'wait', title: `Bienvenue, ${team.name} !`, text: 'La partie va commencer. Regardez l’écran.', canRename: true };
   if (S.phase === 'round-intro') {
     const info = C.ROUNDS[roundType()];
     return { screen: 'wait', title: info.title, text: roundRules(roundType()) };

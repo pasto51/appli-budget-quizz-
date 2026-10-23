@@ -155,11 +155,11 @@ Tous les messages sont du JSON avec un champ `t`.
 `remote:config {allow}`, `remote:reset`, `remote:state {state}`.
 
 **Serveur → écran** : `room {code, hostToken, remoteKey}`, `devices {counts}`,
-`buzzstate {buzz}`, `buzz {team, qid, order}`, `action {team, qid, value}`,
+`buzzstate {buzz}`, `buzz {team, qid, order}`, `action {team, qid, value}`, `rename {team, name}`,
 `secret:sent {team, devices}`, `remotes {count}`, `remote:act {act, data}`.
 
 **Téléphone → serveur** : `join {code, deviceId, team?}`, `pick {team}`, `leave`,
-`buzz {qid, rtt}`, `action {qid, value}`.
+`buzz {qid, rtt}`, `action {qid, value}`, `rename {name}` (nom d’équipe proposé ; l’écran ne l’accepte que si la vue porte `canRename`).
 
 **Serveur → téléphone** : `joined`, `error`, `teams`, `state {team, view, buzz, secret}`,
 `view {view}` (avec `remaining` au lieu de `deadline` : les horloges diffèrent),

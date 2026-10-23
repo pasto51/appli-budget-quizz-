@@ -493,3 +493,6 @@ body.bz { min-height: 100dvh; }
   .bz-pads { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
   .bz-pad { min-height: 72px; font-size: 1.6rem; }
 }
+.rename-btn { display: block; margin: 18px auto 0; }
+.bz-label small { font-family: var(--body); font-size: .8rem; color: var(--muted); }
+.bz-name { background: var(--team); color: var(--ink); border: 0; border-radius: 14px; padding: 8px 12px; width: 150px; font-family: var(--display); font-size: 1.1rem; text-align: center; }

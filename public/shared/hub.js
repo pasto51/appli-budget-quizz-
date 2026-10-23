@@ -220,8 +220,16 @@ export class Hub {
       case 'action':
         if (d && d.team) this.teamAction(d.team, msg, deviceId);
         return;
+      case 'rename': // l'écran décide d'accepter ou non (voir viewFor : canRename)
+        if (d && d.team) this.toHost({ t: 'rename', team: d.team, name: cleanName(msg.name) });
+        return;
     }
   }
+}
+
+export const NAME_MAX = 16;
+export function cleanName(name) {
+  return String(name ?? '').replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
 }
 
 function emptyBuzz() {

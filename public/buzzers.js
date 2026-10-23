@@ -10,7 +10,7 @@
 //
 // Règle d'or, comme pour l'écran de jeu : on modifie B, puis on appelle sync().
 
-import { Hub, handleHostMessage } from './shared/hub.js';
+import { Hub, NAME_MAX, cleanName, handleHostMessage } from './shared/hub.js';
 import { Socket } from './shared/net.js';
 import { esc } from './shared/controls.js';
 import { ANIMALS, MAX_TEAMS, TEAM_PRESETS } from './shared/content.js';
@@ -40,14 +40,16 @@ const store = {
 //   phase    'setup' (réglages) | 'lobby' (QR code, net seulement) | 'play'
 //   step     'idle' (rien d'ouvert) | 'open' (buzzers ouverts) | 'winner' (une équipe a la main)
 //   excluded équipes qui se sont trompées sur la question en cours
-const fresh = () => ({ phase: 'setup', mode: 'net', n: 3, scores: {}, step: 'idle', qid: null, seq: 0, winner: null, excluded: [], code: null, hostToken: null, remoteKey: null });
+//   names    noms choisis par les équipes (sinon le nom par défaut : Ketchup, Mayo…)
+const fresh = () => ({ phase: 'setup', mode: 'net', n: 3, names: {}, scores: {}, step: 'idle', qid: null, seq: 0, winner: null, excluded: [], code: null, hostToken: null, remoteKey: null });
 let B = { ...fresh(), ...(store.get() || {}) };
 
 // rt : état de la session, non sauvegardé
 const rt = { hub: null, net: null, conn: 'connecting', joinUrl: '', counts: {}, lastViews: {}, openKey: null, showQr: false };
 
-const teams = () => TEAM_PRESETS.slice(0, B.n);
-const teamById = (id) => TEAM_PRESETS.find((t) => t.id === id);
+const named = (t) => ({ ...t, name: B.names?.[t.id] || t.name });
+const teams = () => TEAM_PRESETS.slice(0, B.n).map(named);
+const teamById = (id) => teams().find((t) => t.id === id);
 const animalOf = (t) => ANIMALS.find((a) => a.id === t.animal) || ANIMALS[0];
 const score = (id) => B.scores[id] || 0;
 const rankOf = (id) => 1 + teams().filter((t) => score(t.id) > score(id)).length;
@@ -55,8 +57,8 @@ const rankOf = (id) => 1 + teams().filter((t) => score(t.id) > score(id)).length
 // ---------- lien avec le hub (serveur ou local) ----------
 
 function send(msg) {
-  if (B.mode === 'local') handleHostMessage(rt.hub, msg);
-  else rt.net?.send(msg);
+  if (B.mode !== 'local') rt.net?.send(msg);
+  else if (rt.hub) handleHostMessage(rt.hub, msg);
 }
 
 function connect() {
@@ -101,6 +103,8 @@ function onHub(msg) {
       return render();
     case 'buzz':
       return onBuzz(msg.team, msg.qid);
+    case 'rename': // une équipe choisit son nom sur son téléphone
+      return rename(msg.team, msg.name);
   }
 }
 
@@ -114,6 +118,13 @@ async function joinUrlForLan() {
   } catch {}
 }
 
+function rename(id, name) {
+  if (!teamById(id)) return;
+  B.names = { ...B.names, [id]: cleanName(name) || undefined };
+  send({ t: 'teams', teams: teams() });
+  sync();
+}
+
 // renvoie tout au hub (connexion, reconnexion, redémarrage du serveur)
 function resync() {
   rt.lastViews = {};
@@ -125,8 +136,8 @@ function resync() {
 // ce que voit le téléphone de chaque équipe
 function viewFor(t) {
   const me = { score: score(t.id), rank: rankOf(t.id), n: B.n };
-  if (B.phase !== 'play') return { screen: 'wait', title: `Bienvenue, ${t.name} !`, text: 'Ça va commencer. Regardez l’écran.' };
-  if (B.step === 'idle') return { screen: 'wait', title: 'Prêts ?', text: 'Écoutez la question…', me };
+  if (B.phase !== 'play') return { screen: 'wait', title: `Bienvenue, ${t.name} !`, text: 'Ça va commencer. Regardez l’écran.', canRename: true };
+  if (B.step === 'idle') return { screen: 'wait', title: 'Prêts ?', text: 'Écoutez la question…', me, canRename: true };
   return { screen: 'buzz', qid: B.qid, me };
 }
 
@@ -223,7 +234,10 @@ function renderSetup() {
       <button class="${B.mode === 'net' ? 'on' : ''}" data-act="mode" data-v="net">📱 Avec leur téléphone<small>Un buzzer par équipe, cri d’animal sur le téléphone</small></button>
       <button class="${B.mode === 'local' ? 'on' : ''}" data-act="mode" data-v="local">👆 Sur cet écran<small>Un gros bouton par équipe (ou les touches 1, 2, 3…)</small></button>
     </div></div>
-    <div class="bz-teams">${teams().map((t) => teamChip(t)).join('')}</div>
+    <div class="bz-label">Noms des équipes <small>(modifiables ici ou sur les téléphones)</small></div>
+    <div class="bz-teams">${teams()
+      .map((t) => `<input class="bz-name" data-name="${t.id}" value="${esc(t.name)}" maxlength="${NAME_MAX}" style="--team:${t.color};--ink:${t.ink}" aria-label="Nom de l’équipe ${esc(t.name)}">`)
+      .join('')}</div>
     <button class="btn btn-primary btn-big" data-act="go">C’est parti !</button>
     <a class="link" href="./">← Retour</a>
   </div>`;
@@ -314,7 +328,7 @@ function act(name, v) {
       return render();
     case 'go':
       disconnect();
-      B = { ...fresh(), n: B.n, mode: B.mode, phase: B.mode === 'net' ? 'lobby' : 'play' };
+      B = { ...fresh(), n: B.n, mode: B.mode, names: B.names, phase: B.mode === 'net' ? 'lobby' : 'play' };
       connect();
       return sync();
     case 'start':
@@ -350,6 +364,12 @@ function act(name, v) {
       return render();
   }
 }
+
+// nom d'équipe tapé à l'écran (réglages)
+$app.addEventListener('change', (e) => {
+  const id = e.target.dataset?.name;
+  if (id) rename(id, e.target.value);
+});
 
 // mode « sur cet écran » : une équipe buzze (bouton ou touche du clavier)
 function localBuzz(team) {

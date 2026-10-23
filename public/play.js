@@ -231,6 +231,15 @@ function render() {
   }
   lastBuzzStatus = st;
 
+  // l'écran autorise le changement de nom (salle d'attente, entre deux questions…)
+  if (S.view?.canRename) {
+    $main.insertAdjacentHTML('beforeend', `<button class="btn btn-primary rename-btn" id="rename">✏️ Choisir le nom de l’équipe</button>`);
+    document.getElementById('rename').onclick = () => {
+      const name = prompt('Nom de votre équipe :', team.name);
+      if (name && name.trim()) sock.send({ t: 'rename', name: name.trim().slice(0, 16) });
+    };
+  }
+
   $foot.innerHTML = `<button class="link" id="leave">Changer d’équipe</button>`;
   document.getElementById('leave').onclick = () => {
     if (!confirm('Quitter cette équipe ?')) return;

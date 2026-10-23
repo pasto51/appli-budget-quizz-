@@ -61,6 +61,11 @@ function onHubMessage(msg) {
     case 'action':
       onAction(msg.team, msg.qid, msg.value);
       break;
+    case 'rename': // proposé par un téléphone, accepté seulement en salle d'attente
+      if (S.phase !== 'lobby' || !msg.name || !teamById(msg.team)) return;
+      teamById(msg.team).name = msg.name;
+      hostSend({ t: 'teams', teams: activeTeams() });
+      break;
     case 'remotes':
       rt.remoteCount = msg.count;
       if (rt.remoteCount) toast('🎤 Télécommande du présentateur connectée');

@@ -45,6 +45,11 @@ test('partie avec téléphones : buzz, Sel ou Poivre, reconnexion, Menus, Défis
   const p1 = await joinPhone(browser, server.url, code, 'ketchup', errors);
   const p2 = await joinPhone(browser, server.url, code, 'mayo', errors);
   await host.waitForFunction(() => document.querySelectorAll('.lobby-team.ready').length === 2);
+  // nom choisi sur le téléphone, en salle d'attente seulement
+  p1.removeAllListeners('dialog');
+  p1.once('dialog', (d) => d.accept('Les Poulets'));
+  await p1.click('#rename');
+  await host.waitForFunction(() => document.querySelector('.lobby-teams').textContent.includes('Les Poulets'));
 
   // Nuggets : Mayo buzze en premier
   await host.click('[data-act=begin]');
@@ -71,7 +76,7 @@ test('partie avec téléphones : buzz, Sel ou Poivre, reconnexion, Menus, Défis
   // un téléphone rechargé retrouve son équipe
   await p1.reload();
   await p1.waitForSelector('.phone-team');
-  assert.match(await p1.textContent('.phone-team'), /Ketchup/);
+  assert.match(await p1.textContent('.phone-team'), /Les Poulets/);
 
   // Menus (on passe L'Addition) : 3 bonnes réponses = 3 points + 1 bonus
   await host.click('[data-act=menu]');
@@ -80,7 +85,7 @@ test('partie avec téléphones : buzz, Sel ou Poivre, reconnexion, Menus, Défis
   await host.click('[data-act=m-skip]');
   await host.click('[data-act=start-round]');
   await host.waitForSelector('.menu-card');
-  const playing = (await host.textContent('.perf-team')).includes('Ketchup') ? 0 : 1;
+  const playing = (await host.textContent('.perf-team')).includes('Les Poulets') ? 0 : 1;
   const phone = [p1, p2][playing];
   const before = (await scores(host))[playing];
   await phone.waitForSelector('.choice');
@@ -97,7 +102,7 @@ test('partie avec téléphones : buzz, Sel ou Poivre, reconnexion, Menus, Défis
   await host.click('[data-act=menu]');
   await host.click('[data-act=m-skip]');
   await host.click('[data-act=start-round]');
-  const performer = (await host.textContent('.perf-team')).includes('Ketchup') ? 0 : 1;
+  const performer = (await host.textContent('.perf-team')).includes('Les Poulets') ? 0 : 1;
   await host.click('[data-act=defi-run]');
   await host.click('[data-act=end-perf]');
   const voter = [p1, p2][1 - performer];
@@ -429,11 +434,17 @@ test('buzzers seuls : téléphones et écran unique, points, la main passe aprè
   const code = await host.textContent('.lobby-code');
   const p1 = await joinPhone(browser, server.url, code, 'ketchup', errors);
   const p2 = await joinPhone(browser, server.url, code, 'mayo', errors);
+  // une équipe choisit son nom sur son téléphone
+  p2.removeAllListeners('dialog');
+  p2.once('dialog', (d) => d.accept('Les Champions'));
+  await p2.click('#rename');
+  await host.waitForFunction(() => document.querySelector('.lobby-teams').textContent.includes('Les Champions'));
+  await p2.waitForFunction(() => document.getElementById('teamName').textContent.includes('Les Champions'));
   await host.click('[data-act=start]');
   await host.click('[data-act=open]');
   await p2.click('.buzzer-armed');
   await host.waitForSelector('.bz-winner');
-  assert.match(await host.textContent('.bz-winner'), /Mayo/);
+  assert.match(await host.textContent('.bz-winner'), /Les Champions/);
   await p1.waitForSelector('.buzzer-lost');
   await host.click('[data-act=wrong]'); // faux : seule l'autre équipe peut buzzer
   await p1.click('.buzzer-armed');

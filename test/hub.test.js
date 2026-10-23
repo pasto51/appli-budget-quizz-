@@ -153,3 +153,15 @@ test('les actions des téléphones remontent à l’écran avec leur équipe', (
   assert.equal(a.team, 'cornichon');
   assert.equal(a.value, 'sel');
 });
+
+test('nom d’équipe proposé par un téléphone : nettoyé puis transmis à l’écran', () => {
+  const toHost = [];
+  const hub = new Hub({ toHost: (m) => toHost.push(m) });
+  hub.setTeams([{ id: 'a', name: 'A' }]);
+  hub.deviceConnect('d1');
+  hub.handleDeviceMessage('d1', { t: 'rename', name: '  Les   Champions du monde entier  ' });
+  assert.equal(toHost.find((m) => m.t === 'rename'), undefined, 'pas d’équipe choisie : ignoré');
+  hub.devicePick('d1', 'a');
+  hub.handleDeviceMessage('d1', { t: 'rename', name: '  Les   Champions du monde entier  ' });
+  assert.deepEqual(toHost.find((m) => m.t === 'rename'), { t: 'rename', team: 'a', name: 'Les Champions du' });
+});
