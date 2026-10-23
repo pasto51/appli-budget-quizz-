@@ -1,0 +1,17 @@
+{
+  "name": "Burger Quiz maison — Buzzers seuls",
+  "short_name": "Buzzers",
+  "id": "buzzers.html",
+  "start_url": "buzzers.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a0f08",
+  "theme_color": "#1a0f08",
+  "lang": "fr",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

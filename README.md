@@ -12,6 +12,7 @@ Jeu de soirée façon Burger Quiz, **sans animateur humain**. De **2 à 12 équi
 **https://appli-budget-quizz.onrender.com/** (hébergée sur Render, offre gratuite : après 15 minutes sans personne, la première ouverture prend environ une minute).
 
 - Écran de jeu : https://appli-budget-quizz.onrender.com/host.html
+- Buzzers seuls (sans le jeu, vous lisez vos questions) : https://appli-budget-quizz.onrender.com/buzzers.html
 - Les téléphones rejoignent avec le QR code affiché sur l'écran.
 
 ## Lancer une partie sur son ordinateur

@@ -416,3 +416,51 @@ test('voix de l’animateur (faux ElevenLabs) : textes du jeu seulement, buzzers
     fake.stop();
   }
 });
+
+test('buzzers seuls : téléphones et écran unique, points, la main passe après une erreur', async () => {
+  const errors = [];
+  const host = await openPage(browser, `${server.url}/buzzers.html`, { errors });
+  const pts = () => host.$$eval('.bz-pts', (els) => els.map((e) => Number(e.textContent)));
+
+  // avec les téléphones
+  await host.click('[data-act=n][data-v="2"]');
+  await host.click('[data-act=go]');
+  await host.waitForFunction(() => /^[A-Z]{4}$/.test(document.querySelector('.lobby-code')?.textContent));
+  const code = await host.textContent('.lobby-code');
+  const p1 = await joinPhone(browser, server.url, code, 'ketchup', errors);
+  const p2 = await joinPhone(browser, server.url, code, 'mayo', errors);
+  await host.click('[data-act=start]');
+  await host.click('[data-act=open]');
+  await p2.click('.buzzer-armed');
+  await host.waitForSelector('.bz-winner');
+  assert.match(await host.textContent('.bz-winner'), /Mayo/);
+  await p1.waitForSelector('.buzzer-lost');
+  await host.click('[data-act=wrong]'); // faux : seule l'autre équipe peut buzzer
+  await p1.click('.buzzer-armed');
+  await host.waitForSelector('.bz-winner');
+  await host.click('[data-act=right]');
+  assert.deepEqual(await pts(), [1, 0]);
+  await p1.waitForFunction(() => document.getElementById('me').textContent.includes('1'));
+  await p1.close();
+  await p2.close();
+
+  // sur un seul écran, avec le clavier et les gros boutons
+  await host.click('[data-act=setup]');
+  await host.click('[data-act=mode][data-v=local]');
+  await host.click('[data-act=n][data-v="3"]');
+  await host.click('[data-act=go]');
+  await host.click('[data-act=open]');
+  await host.keyboard.press('3');
+  await host.waitForSelector('.bz-winner');
+  assert.match(await host.textContent('.bz-winner'), /Cornichon/);
+  await host.click('[data-act=right]');
+  await host.click('[data-act=open]');
+  await host.click('[data-pad=ketchup]');
+  await host.waitForSelector('.bz-winner');
+  await host.click('[data-act=right]');
+  assert.deepEqual(await pts(), [1, 0, 1]);
+  await host.reload(); // les scores survivent à un rechargement
+  await host.waitForSelector('.bz-pts');
+  assert.deepEqual(await pts(), [1, 0, 1]);
+  noErrors(errors);
+});

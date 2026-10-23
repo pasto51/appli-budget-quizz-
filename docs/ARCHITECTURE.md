@@ -41,6 +41,8 @@ Ce document explique comment le jeu est construit. Pour les tâches courantes
 | `server.js` | Serveur HTTP + WebSocket : pages, salles, QR codes, voix ElevenLabs (option) |
 | `public/host.html` + `public/host/` | Écran de jeu (détail ci-dessous) |
 | `public/play.html` + `play.js` | App téléphone d'une équipe : buzzer, choix, votes, carte secrète, score |
+| `public/buzzers.html` + `buzzers.js` | « Buzzers seuls » : les buzzers et les scores sans les questions (même hub, même app téléphone ; état dans `bq.buzzers`) |
+| `public/shared/awake.js` | Empêche la mise en veille (Wake Lock + petite vidéo muette sur iOS) |
 | `public/remote.html` + `remote.js` | Télécommande du présentateur |
 | `public/index.html` | Accueil (choix écran / téléphone) |
 | `public/style.css` | Tous les styles (écran, téléphone, télécommande) |
