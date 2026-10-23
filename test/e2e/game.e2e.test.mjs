@@ -475,3 +475,26 @@ test('buzzers seuls : téléphones et écran unique, points, la main passe aprè
   assert.deepEqual(await pts(), [1, 0, 1]);
   noErrors(errors);
 });
+
+test('appli installable : bouton « Installer », écran de jeu et buzzers hors connexion', async () => {
+  const errors = [];
+  const context = await browser.newContext();
+  const host = await context.newPage();
+  host.on('pageerror', (e) => errors.push(e.message));
+  await host.goto(`${server.url}/host.html`);
+  assert.ok(await host.isVisible('#install'), 'bouton visible sur l’écran des réglages');
+  await host.waitForFunction(async () => (await caches.open('bq-v1').then((c) => c.keys())).length > 20, null, { timeout: 15000 });
+  await host.evaluate(() => navigator.serviceWorker.ready);
+  await host.waitForFunction(() => !!navigator.serviceWorker.controller);
+  await context.setOffline(true);
+  const off = await context.newPage();
+  off.on('pageerror', (e) => errors.push(e.message));
+  await off.goto(`${server.url}/buzzers.html`);
+  await off.click('[data-act=mode][data-v=local]');
+  await off.click('[data-act=go]');
+  await off.click('[data-act=open]');
+  await off.keyboard.press('2');
+  await off.waitForSelector('.bz-winner');
+  await context.close();
+  noErrors(errors);
+});

@@ -143,6 +143,7 @@ https://appli-budget-quizz.onrender.com/
 | Une question revient trop souvent | La mémoire est par appareil (`bq.seen` dans le navigateur de l'écran) |
 | L’écran se met en veille | `public/shared/awake.js` (Wake Lock, ou petite vidéo muette sur les vieux iPhone) ; s’active au premier appui. Le mode Économie d’énergie de l’iPhone peut quand même verrouiller |
 | L’icône de la tablette ouvre la page des joueurs | Supprimer l’icône, ouvrir `/host.html` puis « Sur l’écran d’accueil » (`manifest-host.webmanifest` ; les joueurs ont `manifest.webmanifest`) |
+| L’appli installée montre une vieille version | Elle prend la dernière version dès qu’elle a du réseau (`public/sw.js`, « réseau d’abord ») ; sinon la fermer complètement et la rouvrir |
 | Le présentateur ne peut plus se connecter | Menu ☰ → « Changer de présentateur » (nouveau QR code) |
 
 Outils de diagnostic dans le navigateur de l'écran (console) :

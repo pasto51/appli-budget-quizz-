@@ -16,6 +16,7 @@ import { esc } from './shared/controls.js';
 import { ANIMALS, MAX_TEAMS, TEAM_PRESETS } from './shared/content.js';
 import { play, preloadSounds, unlockAudio } from './shared/sounds.js';
 import { setupKeepAwake } from './shared/awake.js';
+import { showInstall } from './shared/install.js';
 
 const SAVE_KEY = 'bq.buzzers';
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='];
@@ -211,6 +212,7 @@ function judge(ok) {
 
 function render() {
   document.body.classList.toggle('bz-local', B.mode === 'local');
+  showInstall(B.phase === 'setup');
   if (B.phase === 'setup') return renderSetup();
   if (B.phase === 'lobby') return renderLobby();
   renderPlay();

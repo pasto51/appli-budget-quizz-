@@ -5,6 +5,7 @@ import * as C from '../shared/content.js';
 import { esc, renderControls } from '../shared/controls.js';
 import { isMuted, play } from '../shared/sounds.js';
 import { voiceBusy } from '../shared/voice.js';
+import { showInstall } from '../shared/install.js';
 import { LINES } from '../shared/voicelines.js';
 
 import { renderPlay } from './play-screens.js';
@@ -61,6 +62,7 @@ export function render() {
   document.body.classList.toggle('local-mode', S.mode === 'local');
   renderTop();
   renderScores();
+  showInstall(S.phase === 'setup'); // bouton « Installer l'appli » sur l'écran des réglages
   if (S.phase === 'setup') renderSetup();
   else if (S.phase === 'lobby') renderLobby();
   else if (S.phase === 'round-intro') renderRoundIntro();

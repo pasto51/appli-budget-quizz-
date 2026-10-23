@@ -220,6 +220,17 @@ function lanAddresses() {
 
 // ---------- HTTP ----------
 
+// tous les fichiers du site, sauf la documentation
+function listPublicFiles(dir = PUBLIC_DIR) {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...listPublicFiles(full));
+    else if (!/\.md$/i.test(e.name)) out.push('/' + path.relative(PUBLIC_DIR, full).split(path.sep).join('/'));
+  }
+  return out;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
 
@@ -253,6 +264,13 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': MIME['.json'], 'cache-control': 'no-store' });
       res.end(JSON.stringify(list));
     });
+    return;
+  }
+
+  if (url.pathname === '/api/precache') {
+    // fichiers que l'appli installée garde en mémoire (voir public/sw.js)
+    res.writeHead(200, { 'content-type': MIME['.json'], 'cache-control': 'no-store' });
+    res.end(JSON.stringify(listPublicFiles()));
     return;
   }
 
